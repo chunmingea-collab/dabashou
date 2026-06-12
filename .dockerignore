@@ -1,7 +1,13 @@
 node_modules
+.git
+.claude
+.github
+*.md
+*.log
+Dockerfile
+.dockerignore
+.env*
+temp/
 server/data.db
 server/data.db-wal
 server/data.db-shm
-.git
-*.md
-temp/

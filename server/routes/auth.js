@@ -24,6 +24,9 @@ router.post('/register', (req, res) => {
   if (password.length < 6) {
     return res.status(400).json({ error: '密码至少 6 位' });
   }
+  if (nickname.length > 20) {
+    return res.status(400).json({ error: '昵称最多 20 个字符' });
+  }
 
   const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
   if (existing) {
@@ -32,11 +35,15 @@ router.post('/register', (req, res) => {
 
   const id = 'u_' + crypto.randomUUID().slice(0, 12);
   const hash = bcrypt.hashSync(password, 10);
+  const pid = 'p_' + crypto.randomUUID().slice(0, 12);
 
-  db.prepare('INSERT INTO users (id, username, password_hash, nickname) VALUES (?, ?, ?, ?)').run(id, username, hash, nickname);
-
-  /* 同时创建空白档案 */
-  db.prepare('INSERT INTO profiles (id, user_id, nickname) VALUES (?, ?, ?)').run('p_' + crypto.randomUUID().slice(0, 12), id, nickname);
+  /* 事务：原子写入 user + profile */
+  const insertUser = db.prepare('INSERT INTO users (id, username, password_hash, nickname) VALUES (?, ?, ?, ?)');
+  const insertProfile = db.prepare('INSERT INTO profiles (id, user_id, nickname) VALUES (?, ?, ?)');
+  db.transaction(() => {
+    insertUser.run(id, username, hash, nickname);
+    insertProfile.run(pid, id, nickname);
+  })();
 
   const token = jwt.sign({ userId: id }, config.jwtSecret, { expiresIn: '30d' });
 
@@ -70,15 +77,26 @@ router.post('/login', (req, res) => {
  *  GET  /api/auth/wechat/callback 微信回调
  * ============================================ */
 
+/* 内存 state 存储，用于 CSRF 防护，10 分钟过期 */
+const stateStore = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, expires] of stateStore) {
+    if (expires < now) stateStore.delete(key);
+  }
+}, 5 * 60 * 1000);
+
 router.get('/wechat/url', (req, res) => {
   const wc = config.wechat;
   if (!wc.enabled || !wc.appId) {
     return res.status(400).json({ error: '微信登录未启用，请管理员配置 AppID' });
   }
+  const state = crypto.randomUUID();
+  stateStore.set(state, Date.now() + 10 * 60 * 1000); // 10 分钟有效
   const url =
     `https://open.weixin.qq.com/connect/qrconnect?appid=${wc.appId}` +
     `&redirect_uri=${encodeURIComponent(wc.redirectUri)}` +
-    `&response_type=code&scope=snsapi_login&state=${crypto.randomUUID()}#wechat_redirect`;
+    `&response_type=code&scope=snsapi_login&state=${state}#wechat_redirect`;
   res.json({ url });
 });
 
@@ -88,7 +106,14 @@ router.get('/wechat/callback', async (req, res) => {
     return res.status(400).send('微信登录未启用');
   }
 
-  const { code } = req.query;
+  const { code, state } = req.query;
+
+  /* CSRF 防护：验证 state 参数 */
+  if (!state || !stateStore.has(state)) {
+    return res.status(400).send('无效的登录请求，请重新扫码');
+  }
+  stateStore.delete(state); // 一次性使用
+
   if (!code) {
     return res.status(400).send('缺少授权码');
   }
@@ -99,8 +124,15 @@ router.get('/wechat/callback', async (req, res) => {
       params: { appid: wc.appId, secret: wc.appSecret, code, grant_type: 'authorization_code' },
     });
 
+    /* 检查微信 API 错误 */
+    if (tokenResp.data.errcode) {
+      console.error('微信 token 交换失败:', tokenResp.data);
+      return res.status(400).send('微信授权失败，请重新扫码');
+    }
+
     const { access_token, openid, unionid } = tokenResp.data;
     if (!openid) {
+      console.error('微信 token 交换未返回 openid:', tokenResp.data);
       return res.status(400).send('获取微信信息失败');
     }
 
@@ -109,24 +141,52 @@ router.get('/wechat/callback', async (req, res) => {
       params: { access_token, openid },
     });
 
-    const wxUser = userResp.data;
-    const nickname = wxUser.nickname || '微信用户';
-    const avatar = wxUser.headimgurl || '';
+    if (userResp.data.errcode) {
+      console.error('微信用户信息获取失败:', userResp.data);
+    }
 
-    /* 查找或创建用户 */
+    const wxUser = userResp.data;
+    const nickname = (wxUser && !wxUser.errcode && wxUser.nickname) ? wxUser.nickname : '微信用户';
+    const avatar = (wxUser && !wxUser.errcode && wxUser.headimgurl) ? wxUser.headimgurl : '';
+
+    /* 查找或创建用户（事务） */
     let user = db.prepare('SELECT * FROM users WHERE wechat_openid = ?').get(openid);
     if (!user) {
       const id = 'u_' + crypto.randomUUID().slice(0, 12);
-      const username = 'wx_' + openid.slice(-8);
-      db.prepare('INSERT INTO users (id, username, password_hash, nickname, avatar, wechat_openid, wechat_unionid) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, username, '', nickname, avatar, openid, unionid || '');
-      db.prepare('INSERT INTO profiles (id, user_id, nickname) VALUES (?, ?, ?)').run('p_' + crypto.randomUUID().slice(0, 12), id, nickname);
-      user = { id, nickname };
+      const username = 'wx_' + crypto.randomUUID().slice(0, 8); // 用随机 UUID 避免碰撞
+      const pid = 'p_' + crypto.randomUUID().slice(0, 12);
+
+      const insertUser = db.prepare('INSERT INTO users (id, username, password_hash, nickname, avatar, wechat_openid, wechat_unionid) VALUES (?, ?, ?, ?, ?, ?, ?)');
+      const insertProfile = db.prepare('INSERT INTO profiles (id, user_id, nickname) VALUES (?, ?, ?)');
+      try {
+        db.transaction(() => {
+          insertUser.run(id, username, '', nickname, avatar, openid, unionid || '');
+          insertProfile.run(pid, id, nickname);
+        })();
+      } catch (e) {
+        console.error('微信用户创建失败:', e.message);
+        /* 可能是 username 碰撞，重试一次 */
+        const retryUsername = 'wx_' + crypto.randomUUID().slice(0, 8);
+        const retryId = 'u_' + crypto.randomUUID().slice(0, 12);
+        const retryPid = 'p_' + crypto.randomUUID().slice(0, 12);
+        try {
+          db.transaction(() => {
+            insertUser.run(retryId, retryUsername, '', nickname, avatar, openid, unionid || '');
+            insertProfile.run(retryPid, retryId, nickname);
+          })();
+          user = { id: retryId, nickname };
+        } catch (e2) {
+          console.error('微信用户创建重试失败:', e2.message);
+          return res.status(500).send('登录异常，请重试');
+        }
+      }
+      if (!user) user = { id, nickname };
     }
 
     const token = jwt.sign({ userId: user.id }, config.jwtSecret, { expiresIn: '30d' });
 
-    /* 跳转回前端，token 通过 URL hash 传递 */
-    res.redirect(`/?token=${token}&userId=${user.id}&nickname=${encodeURIComponent(user.nickname)}`);
+    /* 使用 URL fragment 传递 token，不在服务器日志中泄露 */
+    res.redirect(`/#token=${token}&userId=${user.id}&nickname=${encodeURIComponent(user.nickname)}`);
   } catch (e) {
     console.error('WeChat auth error:', e.message);
     res.status(500).send('微信登录异常，请重试');

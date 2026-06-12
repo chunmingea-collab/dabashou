@@ -21,10 +21,24 @@ async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json' };
   const t = Auth._t();
   if (t) headers['Authorization'] = 'Bearer ' + t;
-  const res = await fetch(API + path, { ...opts, headers: { ...headers, ...opts.headers } });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || '请求失败');
-  return data;
+
+  const { signal, timeout = 15000, ...restOpts } = opts;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  if (signal) signal.addEventListener('abort', () => controller.abort());
+
+  try {
+    const res = await fetch(API + path, {
+      signal: controller.signal,
+      ...restOpts,
+      headers: { ...headers, ...restOpts.headers },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '请求失败');
+    return data;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /* ==================== DOM 引用 ==================== */
@@ -65,7 +79,7 @@ const $confirmCancel = document.getElementById('confirm-cancel');
 const $confirmOk = document.getElementById('confirm-ok');
 
 let profiles = [], totalCount = 0, deleteTargetId = null;
-let loginMode = 'login';
+let loginMode = (document.querySelector('.login-tab.active') || {}).dataset.tab || 'login';
 
 /* ==================== 登录切换 ==================== */
 document.getElementById('btn-switch-pwd').addEventListener('click', () => {
@@ -158,7 +172,11 @@ async function showMainPage() {
   $loginPage.classList.add('hidden');
   $mainPage.classList.remove('hidden');
   $currentUser.textContent = Auth._nick();
-  await loadProfiles();
+  try {
+    await loadProfiles();
+  } catch (e) {
+    $cardGrid.innerHTML = '<div class="empty-state"><p>加载失败</p><p class="empty-sub">请刷新页面重试</p></div>';
+  }
 }
 
 $btnLogout.addEventListener('click', () => {
@@ -170,20 +188,26 @@ $btnLogout.addEventListener('click', () => {
   $searchInput.value = '';
 });
 
-(function init() {
+(async function init() {
   if (Auth.loggedIn) {
-    api('/auth/me').then(() => showMainPage()).catch(() => Auth.clear());
+    try {
+      await api('/auth/me');
+      await showMainPage();
+    } catch {
+      Auth.clear();
+    }
   }
 })();
 
 /* ==================== 数据加载 ==================== */
-async function loadProfiles(q) {
+async function loadProfiles(q, signal) {
   q = q || '';
   try {
-    const result = await api(`/profiles?q=${encodeURIComponent(q)}&size=50`);
+    const result = await api(`/profiles?q=${encodeURIComponent(q)}&size=50`, { signal });
     profiles = result.profiles;
     totalCount = result.total;
   } catch (e) {
+    if (e.name === 'AbortError') return; // 搜索被取消，静默忽略
     profiles = [];
     totalCount = 0;
   }
@@ -204,7 +228,12 @@ function render() {
   $emptyState.classList.add('hidden');
 
   if (profiles.length === 0) {
-    $cardGrid.innerHTML = '<div class="empty-state"><p>没找到匹配的人</p><p class="empty-sub">试试其他关键词，或者你来第一个填这个领域</p></div>';
+    $cardGrid.innerHTML = '';
+    $emptyState.classList.remove('hidden');
+    const textEl = $emptyState.querySelector('p');
+    if (textEl) textEl.textContent = '没找到匹配的人';
+    const subEl = $emptyState.querySelector('.empty-sub');
+    if (subEl) subEl.textContent = '试试其他关键词，或者你来第一个填这个领域';
     return;
   }
 
@@ -240,20 +269,27 @@ function render() {
       <div class="card-wechat"><span class="wechat-label">微信</span><span class="wechat-value">${he(p.wechat)}</span></div>
     </div>`;
   }).join('');
-
-  document.querySelectorAll('.card-action-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (btn.dataset.action === 'edit') openEditModal(btn.dataset.id);
-      if (btn.dataset.action === 'delete') confirmDelete(btn.dataset.id);
-    });
-  });
 }
 
 function he(s) { const d = document.createElement('div'); d.textContent = String(s || ''); return d.innerHTML; }
 
+/* 事件委托：卡片操作按钮（编辑/删除） */
+$cardGrid.addEventListener('click', (e) => {
+  const btn = e.target.closest('.card-action-btn');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const id = btn.dataset.id;
+  if (action === 'edit') openEditModal(id);
+  if (action === 'delete') confirmDelete(id);
+});
+
 /* ==================== 搜索 ==================== */
-$searchInput.addEventListener('input', () => loadProfiles($searchInput.value.trim()));
+let searchAbortController = null;
+$searchInput.addEventListener('input', () => {
+  if (searchAbortController) searchAbortController.abort();
+  searchAbortController = new AbortController();
+  loadProfiles($searchInput.value.trim(), searchAbortController.signal);
+});
 
 document.querySelectorAll('.hot-tag').forEach(tag => {
   tag.addEventListener('click', () => {
@@ -275,7 +311,7 @@ function openAddModal() {
 }
 
 function openEditModal(id) {
-  const p = profiles.find(p => p.id === id);
+  const p = profiles.find(p => String(p.id) === String(id));
   if (!p) return;
   $modalTitle.textContent = '编辑互助档案';
   $nickname.value = p.nickname;
@@ -332,10 +368,7 @@ $confirmCancel.addEventListener('click', () => {
 $confirmOk.addEventListener('click', async () => {
   if (!deleteTargetId) return;
   try {
-    await api('/profiles/mine', {
-      method: 'PUT',
-      body: JSON.stringify({ nickname: Auth._nick() || '用户', intro: '', offers: [], keywords: [], needs: [], wechat: '' }),
-    });
+    await api('/profiles/mine', { method: 'DELETE' });
   } catch (err) { alert(err.message); }
   deleteTargetId = null;
   $confirmOverlay.classList.add('hidden');
@@ -343,5 +376,5 @@ $confirmOk.addEventListener('click', async () => {
 });
 
 $confirmOverlay.addEventListener('click', (e) => {
-  if (e.target === $confirmOverlay) { deleteTargetId = null; $confirmOverlay.classList.add('hidden'); }
+  if (e.target === $confirmOverlay) $confirmCancel.click();
 });

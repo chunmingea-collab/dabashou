@@ -2,11 +2,15 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const config = require('./config');
+const db = require('./db');
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin: config.origin,
+  credentials: true,
+}));
+app.use(express.json({ limit: '100kb' }));
 
 /* API 路由 */
 app.use('/api/auth', require('./routes/auth'));
@@ -31,6 +35,15 @@ app.listen(config.port, () => {
   console.log('===================================');
 });
 
+/* 优雅关闭 */
+function shutdown(signal) {
+  console.log(`收到 ${signal}，正在关闭...`);
+  try { db.close(); } catch {}
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
 process.on('unhandledRejection', (err) => {
-  console.error('未捕获的异步错误:', err.message);
+  console.error('未捕获的异步错误:', err);
 });
