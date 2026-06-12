@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>搭把手 · 互助社交</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ==================== 登录页 ==================== -->
+<div id="login-page">
+  <div class="login-card">
+    <div class="login-left">
+      <h1>搭把手</h1>
+      <p class="login-desc">不铺垫，不客套，不内耗。<br>亮出你的资源和本事，直接匹配对的人。<br>能帮就帮，没空就说，干就完了。</p>
+    </div>
+    <div class="login-right">
+      <!-- 微信扫码 -->
+      <div class="login-section" id="login-wechat">
+        <div class="qr-box" id="qr-box">
+          <div class="qr-placeholder">
+            <svg viewBox="0 0 160 160"><rect width="160" height="160" fill="#f0f0f0"/><rect x="20" y="20" width="40" height="40" fill="#07c160"/><rect x="100" y="20" width="40" height="40" fill="#07c160"/><rect x="20" y="100" width="40" height="40" fill="#07c160"/><circle cx="80" cy="80" r="14" fill="#07c160"/></svg>
+          </div>
+          <p class="qr-tip">微信扫码登录</p>
+          <p class="qr-sub" id="qr-status">（需管理员配置 AppID 后启用）</p>
+        </div>
+        <p class="login-divider"><span>或使用账号登录</span></p>
+        <button class="btn-switch-login" id="btn-switch-pwd">使用账号密码登录</button>
+      </div>
+
+      <!-- 账号密码 -->
+      <div class="login-section hidden" id="login-pwd">
+        <div class="login-tabs">
+          <button class="login-tab active" data-tab="login">登录</button>
+          <button class="login-tab" data-tab="register">注册</button>
+        </div>
+        <form id="login-form" class="login-form">
+          <input type="text" id="login-username" placeholder="用户名" required minlength="2" maxlength="20">
+          <input type="password" id="login-password" placeholder="密码" required minlength="6">
+          <input type="text" id="login-nickname" placeholder="昵称（注册时填写）" class="reg-only hidden" maxlength="20">
+          <p class="login-error hidden" id="login-error"></p>
+          <button type="submit" class="btn-login-submit" id="btn-login-text">登录</button>
+        </form>
+        <p class="login-divider"><span>或</span></p>
+        <button class="btn-switch-login" id="btn-switch-wechat">微信扫码登录</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 主页面 ==================== -->
+<div id="main-page" class="hidden">
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <span class="logo">搭把手</span>
+      <div class="topbar-right">
+        <span class="current-user" id="current-user"></span>
+        <button class="btn-logout" id="btn-logout">退出</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="creed">
+    <div class="creed-inner">
+      <div class="creed-item">
+        <span class="creed-icon">1</span>
+        <p>这里没有老师、大神、大佬。你有资源，我有需求，匹配就谈，不匹配就过。</p>
+      </div>
+      <div class="creed-divider"></div>
+      <div class="creed-item">
+        <span class="creed-icon">2</span>
+        <p>能帮就直接说能，没空就直接说没空。不铺垫，不解释，不内耗。</p>
+      </div>
+      <div class="creed-divider"></div>
+      <div class="creed-item">
+        <span class="creed-icon">3</span>
+        <p>直接说事，直接给结果。虚伪客套在这里不好使，效率是唯一的体面。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="search-bar">
+    <div class="search-inner">
+      <input type="text" id="search-input" placeholder="搜你想找的能力或资源... 例如：摄影 / 法律咨询 / 健身搭子" autocomplete="off">
+      <span class="search-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </span>
+    </div>
+  </div>
+
+  <div class="stats" id="stats-bar"></div>
+
+  <div class="hot-tags">
+    <span class="hot-label">试试搜这些：</span>
+    <span class="hot-tag" data-kw="设计">设计</span>
+    <span class="hot-tag" data-kw="编程">编程</span>
+    <span class="hot-tag" data-kw="法律">法律</span>
+    <span class="hot-tag" data-kw="健身">健身</span>
+    <span class="hot-tag" data-kw="摄影">摄影</span>
+    <span class="hot-tag" data-kw="英语">英语</span>
+    <span class="hot-tag" data-kw="理财">理财</span>
+    <span class="hot-tag" data-kw="自媒体">自媒体</span>
+    <span class="hot-tag" data-kw="简历">简历</span>
+    <span class="hot-tag" data-kw="装修">装修</span>
+    <span class="hot-tag" data-kw="二手">二手</span>
+    <span class="hot-tag" data-kw="遛狗">遛狗</span>
+  </div>
+
+  <div class="card-grid" id="card-grid"></div>
+
+  <div class="empty-state hidden" id="empty-state">
+    <div class="empty-icon">
+      <svg viewBox="0 0 80 80" fill="none"><circle cx="40" cy="40" r="38" stroke="#ccc" stroke-width="2" stroke-dasharray="6 4"/><text x="40" y="36" text-anchor="middle" fill="#ccc" font-size="28">🤝</text></svg>
+    </div>
+    <p>还没人亮出本事</p>
+    <p class="empty-sub">点右下角 +，第一个来。不丢人。</p>
+  </div>
+
+  <button class="fab" id="fab-add">+</button>
+
+</div>
+
+<!-- ==================== 档案弹窗 ==================== -->
+<div class="modal-overlay hidden" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modal-title">填写互助档案</h2>
+      <button class="modal-close" id="modal-close">&times;</button>
+    </div>
+    <form id="profile-form">
+      <div class="form-group">
+        <label>昵称 <span class="required">*</span></label>
+        <input type="text" id="nickname" placeholder="让大家怎么称呼你" required maxlength="20">
+      </div>
+      <div class="form-group">
+        <label>一句话介绍 <span class="required">*</span></label>
+        <input type="text" id="intro" placeholder="例如：会写代码的设计师 / 宠物医生 / 爱折腾的大学生" required maxlength="50">
+      </div>
+      <div class="form-group">
+        <label>我能提供（能力 / 资源 / 服务）<span class="required">*</span></label>
+        <textarea id="offers" placeholder="每行写一条，例如：&#10;帮看简历和模拟面试&#10;法律咨询&#10;周末可以帮忙遛狗（北京朝阳）&#10;手把手教你做电商" rows="5" required></textarea>
+        <span class="field-hint">按回车换行，每行一条</span>
+      </div>
+      <div class="form-group">
+        <label>关键字标签 <span class="required">*</span></label>
+        <input type="text" id="keywords" placeholder="用逗号或空格分隔，例如：简历, 面试, 求职, 职业规划" required maxlength="200">
+        <span class="field-hint">方便别人搜索找到你，尽量多写几个</span>
+      </div>
+      <div class="form-group">
+        <label>我需要什么（选填）</label>
+        <textarea id="needs" placeholder="每行写一条，例如：&#10;想学尤克里里入门&#10;需要一个健身搭子&#10;求推荐靠谱装修师傅" rows="3"></textarea>
+        <span class="field-hint">不是求助，是交换。直接说你要什么，别人能给你就联系你</span>
+      </div>
+      <div class="form-group">
+        <label>微信号 <span class="required">*</span></label>
+        <input type="text" id="wechat" placeholder="你的微信号" required maxlength="30">
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-cancel" id="btn-cancel">取消</button>
+        <button type="submit" class="btn-submit">亮出本事，提交档案</button>
+      </div>
+      <p class="form-creed">别想太多，亮出来就有人找。能干就干，不能就换，不丢人。</p>
+    </form>
+  </div>
+</div>
+
+<!-- ==================== 删除确认 ==================== -->
+<div class="confirm-overlay hidden" id="confirm-overlay">
+  <div class="confirm-box">
+    <p id="confirm-text"></p>
+    <div class="confirm-actions">
+      <button class="btn-cancel" id="confirm-cancel">取消</button>
+      <button class="btn-danger" id="confirm-ok">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<footer>
+  <p>搭把手 — 不铺垫，不客套，直接交换。能帮就帮，没空就换。</p>
+</footer>
+</body>
+</html>
