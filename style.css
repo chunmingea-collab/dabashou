@@ -91,6 +91,11 @@ body {
   font-size: 13px; color: #999; cursor: pointer; transition: all .2s;
 }
 .btn-logout:hover { border-color: #ff4d4f; color: #ff4d4f; }
+.btn-delete-account {
+  background: none; border: 1px solid #ddd; border-radius: 6px; padding: 4px 14px;
+  font-size: 13px; color: #ccc; cursor: pointer; transition: all .2s;
+}
+.btn-delete-account:hover { border-color: #ff4d4f; color: #ff4d4f; background: #fff5f5; }
 
 /* ========== 信条 ========== */
 .creed { background: #fff; border-bottom: 1px solid #f0f0f0; }
@@ -299,6 +304,7 @@ footer {
   .logo { font-size: 17px; }
   .current-user { font-size: 13px; }
   .btn-logout { font-size: 12px; padding: 3px 10px; }
+  .btn-delete-account { font-size: 12px; padding: 3px 10px; }
 
   .creed-inner { flex-direction: column; gap: 12px; padding: 14px 16px; }
   .creed-divider { width: 100%; height: 1px; margin: 0; }

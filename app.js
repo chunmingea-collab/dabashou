@@ -77,6 +77,9 @@ const $confirmOverlay = document.getElementById('confirm-overlay');
 const $confirmText = document.getElementById('confirm-text');
 const $confirmCancel = document.getElementById('confirm-cancel');
 const $confirmOk = document.getElementById('confirm-ok');
+const $confirmType = document.getElementById('confirm-type');
+const $confirmPassword = document.getElementById('confirm-password');
+const $confirmError = document.getElementById('confirm-error');
 
 let profiles = [], totalCount = 0, deleteTargetId = null;
 let loginMode = (document.querySelector('.login-tab.active') || {}).dataset.tab || 'login';
@@ -187,6 +190,8 @@ $btnLogout.addEventListener('click', () => {
   $loginWechat.classList.remove('hidden');
   $searchInput.value = '';
 });
+
+document.getElementById('btn-delete-account').addEventListener('click', confirmDeleteAccount);
 
 (async function init() {
   if (Auth.loggedIn) {
@@ -355,8 +360,22 @@ $profileForm.addEventListener('submit', async (e) => {
 /* ==================== 删除确认 ==================== */
 function confirmDelete(id) {
   deleteTargetId = id;
+  $confirmType.value = 'profile';
+  $confirmPassword.classList.add('hidden');
+  $confirmError.classList.add('hidden');
   const p = profiles.find(p => p.id === id);
   $confirmText.textContent = `确定删除「${p ? p.nickname : ''}」的互助档案吗？`;
+  $confirmOk.textContent = '确认删除';
+  $confirmOverlay.classList.remove('hidden');
+}
+
+function confirmDeleteAccount() {
+  $confirmType.value = 'account';
+  $confirmPassword.classList.remove('hidden');
+  $confirmPassword.value = '';
+  $confirmError.classList.add('hidden');
+  $confirmText.textContent = '确定要注销账户吗？你的所有数据将被永久删除，无法恢复。';
+  $confirmOk.textContent = '确认注销';
   $confirmOverlay.classList.remove('hidden');
 }
 
@@ -366,10 +385,26 @@ $confirmCancel.addEventListener('click', () => {
 });
 
 $confirmOk.addEventListener('click', async () => {
-  if (!deleteTargetId) return;
+  const type = $confirmType.value;
+
   try {
+    if (type === 'account') {
+      const password = $confirmPassword.value;
+      await api('/auth/me', { method: 'DELETE', body: JSON.stringify({ password }) });
+      Auth.clear();
+      location.reload();
+      return;
+    }
+    if (!deleteTargetId) return;
     await api('/profiles/mine', { method: 'DELETE' });
-  } catch (err) { alert(err.message); }
+  } catch (err) {
+    if (type === 'account') {
+      $confirmError.textContent = err.message;
+      $confirmError.classList.remove('hidden');
+      return;
+    }
+    alert(err.message);
+  }
   deleteTargetId = null;
   $confirmOverlay.classList.add('hidden');
   loadProfiles($searchInput.value.trim());

@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const db = require('../db');
 const config = require('../config');
+const logger = require('../logger');
 
 const router = express.Router();
 
@@ -79,12 +80,14 @@ router.post('/login', (req, res) => {
 
 /* 内存 state 存储，用于 CSRF 防护，10 分钟过期 */
 const stateStore = new Map();
-setInterval(() => {
+const stateCleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [key, expires] of stateStore) {
     if (expires < now) stateStore.delete(key);
   }
 }, 5 * 60 * 1000);
+/* 允许测试框架卸载定时器 */
+if (typeof stateCleanupTimer.unref === 'function') stateCleanupTimer.unref();
 
 router.get('/wechat/url', (req, res) => {
   const wc = config.wechat;
@@ -126,13 +129,13 @@ router.get('/wechat/callback', async (req, res) => {
 
     /* 检查微信 API 错误 */
     if (tokenResp.data.errcode) {
-      console.error('微信 token 交换失败:', tokenResp.data);
+      logger.error({ wechatError: tokenResp.data }, '微信 token 交换失败');
       return res.status(400).send('微信授权失败，请重新扫码');
     }
 
     const { access_token, openid, unionid } = tokenResp.data;
     if (!openid) {
-      console.error('微信 token 交换未返回 openid:', tokenResp.data);
+      logger.error({ wechatError: tokenResp.data }, '微信 token 交换未返回 openid');
       return res.status(400).send('获取微信信息失败');
     }
 
@@ -142,7 +145,7 @@ router.get('/wechat/callback', async (req, res) => {
     });
 
     if (userResp.data.errcode) {
-      console.error('微信用户信息获取失败:', userResp.data);
+      logger.error({ wechatUserInfoError: userResp.data }, '微信用户信息获取失败');
     }
 
     const wxUser = userResp.data;
@@ -164,7 +167,7 @@ router.get('/wechat/callback', async (req, res) => {
           insertProfile.run(pid, id, nickname);
         })();
       } catch (e) {
-        console.error('微信用户创建失败:', e.message);
+        logger.error({ err: e.message }, '微信用户创建失败');
         /* 可能是 username 碰撞，重试一次 */
         const retryUsername = 'wx_' + crypto.randomUUID().slice(0, 8);
         const retryId = 'u_' + crypto.randomUUID().slice(0, 12);
@@ -176,7 +179,7 @@ router.get('/wechat/callback', async (req, res) => {
           })();
           user = { id: retryId, nickname };
         } catch (e2) {
-          console.error('微信用户创建重试失败:', e2.message);
+          logger.error({ err: e2.message }, '微信用户创建重试失败');
           return res.status(500).send('登录异常，请重试');
         }
       }
@@ -188,7 +191,7 @@ router.get('/wechat/callback', async (req, res) => {
     /* 使用 URL fragment 传递 token，不在服务器日志中泄露 */
     res.redirect(`/#token=${token}&userId=${user.id}&nickname=${encodeURIComponent(user.nickname)}`);
   } catch (e) {
-    console.error('WeChat auth error:', e.message);
+    logger.error({ err: e.message, wechatError: true }, '微信登录异常');
     res.status(500).send('微信登录异常，请重试');
   }
 });
@@ -206,6 +209,35 @@ router.get('/me', auth, (req, res) => {
   const profile = db.prepare('SELECT * FROM profiles WHERE user_id = ?').get(req.userId);
 
   res.json({ user, profile: profile || null });
+});
+
+/* ============================================
+ *  DELETE /api/auth/me  注销账户
+ *  需要提供密码确认
+ * ============================================ */
+
+router.delete('/me', auth, (req, res) => {
+  const { password } = req.body;
+
+  const user = db.prepare('SELECT id, password_hash, wechat_openid FROM users WHERE id = ?').get(req.userId);
+  if (!user) return res.status(404).json({ error: '用户不存在' });
+
+  /* 微信用户无需密码确认 */
+  if (!user.wechat_openid) {
+    if (!password) {
+      return res.status(400).json({ error: '请输入密码以确认注销' });
+    }
+    if (!bcrypt.compareSync(password, user.password_hash)) {
+      return res.status(401).json({ error: '密码错误' });
+    }
+  }
+
+  /* CASCADE 会自动删除关联的 profile */
+  db.prepare('DELETE FROM users WHERE id = ?').run(req.userId);
+
+  logger.info({ userId: req.userId }, '用户已注销');
+
+  res.json({ success: true });
 });
 
 module.exports = router;

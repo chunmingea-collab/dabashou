@@ -1,11 +1,9 @@
+const crypto = require('crypto');
 const jwtSecret = process.env.JWT_SECRET || 'dabashou_jwt_secret_change_me_in_production';
 
 if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
   console.error('致命错误: 生产环境下必须设置 JWT_SECRET 环境变量');
   process.exit(1);
-}
-if (!process.env.JWT_SECRET && process.env.NODE_ENV !== 'production') {
-  console.warn('⚠ 警告: 使用默认 JWT_SECRET，上线前请务必更换');
 }
 
 module.exports = {

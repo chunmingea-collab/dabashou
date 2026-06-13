@@ -2,7 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const config = require('./config');
-const db = require('./db');
+const logger = require('./logger');
+const { requestLogger } = require('./middleware/logger');
 
 const app = express();
 
@@ -11,6 +12,7 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json({ limit: '100kb' }));
+app.use(requestLogger);
 
 /* API 路由 */
 app.use('/api/auth', require('./routes/auth'));
@@ -27,23 +29,28 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'index.html'));
 });
 
-app.listen(config.port, () => {
-  console.log('===================================');
-  console.log('  搭把手 服务已启动');
-  console.log('  打开浏览器访问: http://localhost:' + config.port);
-  console.log('  ' + (config.wechat.enabled ? '微信登录：已启用' : '微信登录：未启用（填写AppID后启用）'));
-  console.log('===================================');
-});
+function start() {
+  app.listen(config.port, () => {
+    logger.info({ port: config.port, wechatEnabled: config.wechat.enabled }, '搭把手 服务已启动');
+  });
 
-/* 优雅关闭 */
-function shutdown(signal) {
-  console.log(`收到 ${signal}，正在关闭...`);
-  try { db.close(); } catch {}
-  process.exit(0);
+  /* 优雅关闭 */
+  function shutdown(signal) {
+    logger.info({ signal }, '收到信号，正在关闭...');
+    try { require('./db').close(); } catch {}
+    process.exit(0);
+  }
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
 
-process.on('unhandledRejection', (err) => {
-  console.error('未捕获的异步错误:', err);
+process.on('unhandledRejection', (reason) => {
+  logger.error({ err: reason }, '未捕获的异步错误');
 });
+
+/* 直接运行（非 require 导入）时启动服务器 */
+if (require.main === module) {
+  start();
+}
+
+module.exports = app;

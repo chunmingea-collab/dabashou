@@ -58,6 +58,7 @@
       <div class="topbar-right">
         <span class="current-user" id="current-user"></span>
         <button class="btn-logout" id="btn-logout">退出</button>
+        <button class="btn-delete-account" id="btn-delete-account">注销账户</button>
       </div>
     </div>
   </header>
@@ -170,6 +171,9 @@
 <div class="confirm-overlay hidden" id="confirm-overlay">
   <div class="confirm-box">
     <p id="confirm-text"></p>
+    <input type="hidden" id="confirm-type" value="profile">
+    <input type="password" id="confirm-password" placeholder="输入密码以确认注销" class="hidden" style="width:100%;margin:8px 0;padding:8px;border:1px solid #ddd;border-radius:4px;">
+    <p class="login-error hidden" id="confirm-error"></p>
     <div class="confirm-actions">
       <button class="btn-cancel" id="confirm-cancel">取消</button>
       <button class="btn-danger" id="confirm-ok">确认删除</button>
