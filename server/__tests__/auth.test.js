@@ -11,6 +11,7 @@ const fs = require('fs');
 const testDbPath = path.join(__dirname, 'test_auth.db');
 process.env.DB_PATH = testDbPath;
 process.env.JWT_SECRET = 'test_secret';
+process.env.RATE_LIMIT = 'false';
 
 let app, db;
 
@@ -82,7 +83,7 @@ describe('POST /api/auth/register', () => {
       .send({ username: 'test', password: '12345', nickname: 'Test' });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain('6 位');
+    expect(res.body.error).toContain('6~128');
   });
 
   test('昵称超过 20 字符返回 400', async () => {

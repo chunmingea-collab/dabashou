@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-搭把手 (Dabashou) is a mutual-help social platform — users create profiles listing what they can offer (skills/resources/services) and what they need, then search to match with others. The name translates to "lend a hand."
+Huzoo (互圈) is a mutual-help social platform — users create profiles listing what they can offer (skills/resources/services) and what they need, then search to match with others.
 
 **Stack:** Node.js + Express + SQLite (better-sqlite3), vanilla JS frontend, no build step.
 
@@ -96,19 +96,13 @@ There is no test suite, linter, or build pipeline. The frontend is raw HTML/CSS/
 - Profile "deletion" from the UI just blanks all fields; it doesn't remove the row.
 - JWT tokens expire after 30 days, stored in localStorage.
 
-## Docker & Deployment
-
-- **Dockerfile** — `node:20-alpine`, installs only production deps from `server/package.json`, copies whole project, exposes port 3000.
-- **GitHub Actions** (`.github/workflows/deploy.yml`) — On push to master, builds + pushes Docker image to `ghcr.io`.
-- **Deployment target** — Clawcloud (see `DEPLOY.md` for full instructions). Requires a persistent volume mounted at `/data` for the SQLite database.
-
 ## Environment Variables
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `PORT` | 3000 | Server port |
 | `JWT_SECRET` | (hardcoded dev value) | JWT signing key — must change in production |
-| `DB_PATH` | `server/data.db` | SQLite file path; in containers use `/data/data.db` |
+| `DB_PATH` | `server/data.db` | SQLite file path |
 | `BASE_URL` | `http://localhost:3000` | Public URL for WeChat OAuth redirect |
 | `WECHAT_APPID` | (none) | WeChat Open Platform AppID; set to enable WeChat login |
 | `WECHAT_SECRET` | (none) | WeChat Open Platform AppSecret |

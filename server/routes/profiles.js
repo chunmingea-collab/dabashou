@@ -18,7 +18,9 @@ router.get('/', optionalAuth, (req, res) => {
   let sql, countSql, params;
 
   if (q && q.trim()) {
-    const keyword = `%${q.trim()}%`;
+    /* 转义 LIKE 通配符，防止 % 匹配全部、_ 匹配任意单字符 */
+    const escaped = q.trim().replace(/[%_]/g, '\\$&');
+    const keyword = `%${escaped}%`;
     sql = `
       SELECT p.*, u.avatar
       FROM profiles p JOIN users u ON p.user_id = u.id
@@ -127,14 +129,18 @@ router.put('/mine', auth, (req, res) => {
     return res.status(404).json({ error: '请先创建档案' });
   }
 
-  db.prepare(`
+  /* 事务：原子更新 profiles + users 昵称同步 */
+  const updateProfiles = db.prepare(`
     UPDATE profiles
     SET nickname = ?, intro = ?, offers = ?, keywords = ?, needs = ?, wechat = ?, updated_at = ?
     WHERE user_id = ?
-  `).run(nickname.trim(), (intro || '').trim(), offersJson, keywordsJson, needsJson, (wechat || '').trim(), now, req.userId);
+  `);
+  const updateUserNick = db.prepare('UPDATE users SET nickname = ? WHERE id = ?');
 
-  /* 同步昵称到 users 表 */
-  db.prepare('UPDATE users SET nickname = ? WHERE id = ?').run(nickname.trim(), req.userId);
+  db.transaction(() => {
+    updateProfiles.run(nickname.trim(), (intro || '').trim(), offersJson, keywordsJson, needsJson, (wechat || '').trim(), now, req.userId);
+    updateUserNick.run(nickname.trim(), req.userId);
+  })();
 
   const profile = db.prepare('SELECT p.*, u.avatar FROM profiles p JOIN users u ON p.user_id = u.id WHERE p.user_id = ?').get(req.userId);
 
@@ -162,8 +168,16 @@ router.delete('/mine', auth, (req, res) => {
  *  GET /api/profiles/stats  统计（总人数/能力数等）
  * ============================================ */
 
+/* 简单内存缓存，30 秒过期 */
+let statsCache = { total: 0, timestamp: 0 };
+
 router.get('/stats', (req, res) => {
+  const now = Date.now();
+  if (now - statsCache.timestamp < 30 * 1000) {
+    return res.json({ total: statsCache.total });
+  }
   const total = db.prepare('SELECT COUNT(*) as count FROM profiles').get().count;
+  statsCache = { total, timestamp: now };
   res.json({ total });
 });
 

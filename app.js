@@ -1,5 +1,5 @@
 /* ===========================================
- *  搭把手 · 前端应用
+ *  Huzoo · 前端应用
  *  对接后端 API，替代 localStorage
  * =========================================== */
 
@@ -71,6 +71,7 @@ const $intro = document.getElementById('intro');
 const $offers = document.getElementById('offers');
 const $keywords = document.getElementById('keywords');
 const $needs = document.getElementById('needs');
+const $formError = document.getElementById('form-error');
 const $wechat = document.getElementById('wechat');
 const $btnCancel = document.getElementById('btn-cancel');
 const $confirmOverlay = document.getElementById('confirm-overlay');
@@ -80,6 +81,9 @@ const $confirmOk = document.getElementById('confirm-ok');
 const $confirmType = document.getElementById('confirm-type');
 const $confirmPassword = document.getElementById('confirm-password');
 const $confirmError = document.getElementById('confirm-error');
+/* 空状态子元素引用，缓存避免每次 render 重复 querySelector */
+const $emptyTitle = $emptyState.querySelector('p');
+const $emptySub = $emptyState.querySelector('.empty-sub');
 
 let profiles = [], totalCount = 0, deleteTargetId = null;
 let loginMode = (document.querySelector('.login-tab.active') || {}).dataset.tab || 'login';
@@ -156,7 +160,7 @@ function showErr(msg) {
 }
 
 /* 微信回调 */
-(function handleWxCallback() {
+(async function handleWxCallback() {
   const hash = window.location.hash.slice(1);
   if (!hash) return;
   const params = new URLSearchParams(hash);
@@ -166,7 +170,14 @@ function showErr(msg) {
     Auth._setUid(params.get('userId'));
     Auth._setNick(decodeURIComponent(params.get('nickname') || ''));
     window.location.hash = '';
-    showMainPage();
+    /* 用 /auth/me 校验 token 有效性，防止恶意注入 */
+    try {
+      await api('/auth/me');
+      showMainPage();
+    } catch {
+      Auth.clear();
+      window.location.reload();
+    }
   }
 })();
 
@@ -178,7 +189,7 @@ async function showMainPage() {
   try {
     await loadProfiles();
   } catch (e) {
-    $cardGrid.innerHTML = '<div class="empty-state"><p>加载失败</p><p class="empty-sub">请刷新页面重试</p></div>';
+    showEmpty('加载失败', '请刷新页面重试');
   }
 }
 
@@ -207,14 +218,20 @@ document.getElementById('btn-delete-account').addEventListener('click', confirmD
 /* ==================== 数据加载 ==================== */
 async function loadProfiles(q, signal) {
   q = q || '';
+  $cardGrid.style.opacity = '0.5';
   try {
     const result = await api(`/profiles?q=${encodeURIComponent(q)}&size=50`, { signal });
     profiles = result.profiles;
     totalCount = result.total;
   } catch (e) {
-    if (e.name === 'AbortError') return; // 搜索被取消，静默忽略
+    if (e.name === 'AbortError') return;
     profiles = [];
     totalCount = 0;
+    $statsBar.textContent = '加载失败，请检查网络后重试';
+    showEmpty('加载失败', e.message || '请刷新页面后重试');
+    return;
+  } finally {
+    $cardGrid.style.opacity = '';
   }
   render();
 }
@@ -225,20 +242,14 @@ function render() {
   $statsBar.textContent = `${totalCount} 人亮了本事${query ? `，匹配 ${profiles.length} 人` : ''}`;
 
   if (profiles.length === 0 && totalCount === 0) {
-    $cardGrid.innerHTML = '';
-    $emptyState.classList.remove('hidden');
+    showEmpty('还没人亮出本事', '点右下角 +，第一个来。不丢人。');
     return;
   }
 
   $emptyState.classList.add('hidden');
 
   if (profiles.length === 0) {
-    $cardGrid.innerHTML = '';
-    $emptyState.classList.remove('hidden');
-    const textEl = $emptyState.querySelector('p');
-    if (textEl) textEl.textContent = '没找到匹配的人';
-    const subEl = $emptyState.querySelector('.empty-sub');
-    if (subEl) subEl.textContent = '试试其他关键词，或者你来第一个填这个领域';
+    showEmpty('没找到匹配的人', '试试其他关键词，或者你来第一个填这个领域');
     return;
   }
 
@@ -278,6 +289,14 @@ function render() {
 
 function he(s) { const d = document.createElement('div'); d.textContent = String(s || ''); return d.innerHTML; }
 
+/** 统一的空状态展示，复用缓存的子元素引用 */
+function showEmpty(title, subtitle) {
+  $cardGrid.innerHTML = '';
+  $emptyState.classList.remove('hidden');
+  if ($emptyTitle) $emptyTitle.textContent = title;
+  if ($emptySub) $emptySub.textContent = subtitle;
+}
+
 /* 事件委托：卡片操作按钮（编辑/删除） */
 $cardGrid.addEventListener('click', (e) => {
   const btn = e.target.closest('.card-action-btn');
@@ -290,16 +309,26 @@ $cardGrid.addEventListener('click', (e) => {
 
 /* ==================== 搜索 ==================== */
 let searchAbortController = null;
+let searchDebounceTimer = null;
+
+/* 点击搜索图标聚焦输入框 */
+document.querySelector('.search-icon').addEventListener('click', () => $searchInput.focus());
+
 $searchInput.addEventListener('input', () => {
+  clearTimeout(searchDebounceTimer);
   if (searchAbortController) searchAbortController.abort();
-  searchAbortController = new AbortController();
-  loadProfiles($searchInput.value.trim(), searchAbortController.signal);
+  searchDebounceTimer = setTimeout(() => {
+    searchAbortController = new AbortController();
+    loadProfiles($searchInput.value.trim(), searchAbortController.signal);
+  }, 300);
 });
 
 document.querySelectorAll('.hot-tag').forEach(tag => {
   tag.addEventListener('click', () => {
     $searchInput.value = tag.dataset.kw;
-    loadProfiles(tag.dataset.kw);
+    if (searchAbortController) searchAbortController.abort();
+    searchAbortController = new AbortController();
+    loadProfiles(tag.dataset.kw, searchAbortController.signal);
   });
 });
 
@@ -308,6 +337,13 @@ $fabAdd.addEventListener('click', openAddModal);
 $modalClose.addEventListener('click', closeModal);
 $btnCancel.addEventListener('click', closeModal);
 $modalOverlay.addEventListener('click', (e) => { if (e.target === $modalOverlay) closeModal(); });
+/* Escape 关闭弹窗 */
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (!$modalOverlay.classList.contains('hidden')) closeModal();
+    if (!$confirmOverlay.classList.contains('hidden')) $confirmCancel.click();
+  }
+});
 
 function openAddModal() {
   $modalTitle.textContent = '填写互助档案';
@@ -337,8 +373,9 @@ $profileForm.addEventListener('submit', async (e) => {
   const needsList = $needs.value.split('\n').map(s => s.trim()).filter(s => s);
   const keywordsList = $keywords.value.split(/[,，\s]+/).map(s => s.trim()).filter(s => s);
 
-  if (!offersList.length) { alert('请填写至少一条你能提供的能力或资源'); return; }
-  if (!keywordsList.length) { alert('请填写至少一个关键字标签'); return; }
+  if (!offersList.length) { $formError.textContent = '请填写至少一条你能提供的能力或资源'; $formError.classList.remove('hidden'); return; }
+  if (!keywordsList.length) { $formError.textContent = '请填写至少一个关键字标签'; $formError.classList.remove('hidden'); return; }
+  $formError.classList.add('hidden');
 
   try {
     await api('/profiles/mine', {
@@ -354,7 +391,7 @@ $profileForm.addEventListener('submit', async (e) => {
     });
     closeModal();
     loadProfiles($searchInput.value.trim());
-  } catch (err) { alert(err.message); }
+  } catch (err) { $formError.textContent = err.message; $formError.classList.remove('hidden'); }
 });
 
 /* ==================== 删除确认 ==================== */

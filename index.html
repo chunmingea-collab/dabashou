@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>搭把手 · 互助社交</title>
+<title>Huzoo · 互助社交</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,7 +12,7 @@
 <div id="login-page">
   <div class="login-card">
     <div class="login-left">
-      <h1>搭把手</h1>
+      <h1>Huzoo</h1>
       <p class="login-desc">不铺垫，不客套，不内耗。<br>亮出你的资源和本事，直接匹配对的人。<br>能帮就帮，没空就说，干就完了。</p>
     </div>
     <div class="login-right">
@@ -54,7 +54,7 @@
 
   <header class="topbar">
     <div class="topbar-inner">
-      <span class="logo">搭把手</span>
+      <span class="logo">Huzoo</span>
       <div class="topbar-right">
         <span class="current-user" id="current-user"></span>
         <button class="btn-logout" id="btn-logout">退出</button>
@@ -137,7 +137,7 @@
       </div>
       <div class="form-group">
         <label>一句话介绍 <span class="required">*</span></label>
-        <input type="text" id="intro" placeholder="例如：会写代码的设计师 / 宠物医生 / 爱折腾的大学生" required maxlength="50">
+        <input type="text" id="intro" placeholder="例如：会写代码的设计师 / 宠物医生 / 爱折腾的大学生" required maxlength="200">
       </div>
       <div class="form-group">
         <label>我能提供（能力 / 资源 / 服务）<span class="required">*</span></label>
@@ -158,6 +158,7 @@
         <label>微信号 <span class="required">*</span></label>
         <input type="text" id="wechat" placeholder="你的微信号" required maxlength="30">
       </div>
+      <p class="form-error hidden" id="form-error"></p>
       <div class="form-actions">
         <button type="button" class="btn-cancel" id="btn-cancel">取消</button>
         <button type="submit" class="btn-submit">亮出本事，提交档案</button>
@@ -183,7 +184,7 @@
 
 <script src="app.js"></script>
 <footer>
-  <p>搭把手 — 不铺垫，不客套，直接交换。能帮就帮，没空就换。</p>
+  <p>Huzoo 互圈 — 不铺垫，不客套，直接交换。能帮就帮，没空就换。</p>
 </footer>
 </body>
 </html>

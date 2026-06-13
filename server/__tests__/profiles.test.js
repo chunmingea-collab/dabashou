@@ -10,6 +10,7 @@ const fs = require('fs');
 const testDbPath = path.join(__dirname, 'test_profiles.db');
 process.env.DB_PATH = testDbPath;
 process.env.JWT_SECRET = 'test_secret';
+process.env.RATE_LIMIT = 'false';
 
 let app, db;
 

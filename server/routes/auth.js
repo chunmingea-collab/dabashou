@@ -13,7 +13,7 @@ const router = express.Router();
  *  用户名 + 密码注册
  * ============================================ */
 
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
   const { username, password, nickname } = req.body;
 
   if (!username || !password || !nickname) {
@@ -22,8 +22,8 @@ router.post('/register', (req, res) => {
   if (username.length < 2 || username.length > 20) {
     return res.status(400).json({ error: '用户名需 2~20 个字符' });
   }
-  if (password.length < 6) {
-    return res.status(400).json({ error: '密码至少 6 位' });
+  if (password.length < 6 || password.length > 128) {
+    return res.status(400).json({ error: '密码需 6~128 位' });
   }
   if (nickname.length > 20) {
     return res.status(400).json({ error: '昵称最多 20 个字符' });
@@ -35,7 +35,7 @@ router.post('/register', (req, res) => {
   }
 
   const id = 'u_' + crypto.randomUUID().slice(0, 12);
-  const hash = bcrypt.hashSync(password, 10);
+  const hash = await bcrypt.hash(password, 10);
   const pid = 'p_' + crypto.randomUUID().slice(0, 12);
 
   /* 事务：原子写入 user + profile */
@@ -55,7 +55,7 @@ router.post('/register', (req, res) => {
  *  用户名 + 密码登录
  * ============================================ */
 
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
@@ -63,7 +63,10 @@ router.post('/login', (req, res) => {
   }
 
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  /* 始终执行 bcrypt 比对，避免通过响应时间差异枚举用户 */
+  const hash = user ? user.password_hash : bcrypt.hashSync('dummy', 10);
+  const valid = await bcrypt.compare(password, hash);
+  if (!user || !valid) {
     return res.status(401).json({ error: '用户名或密码错误' });
   }
 
@@ -216,7 +219,7 @@ router.get('/me', auth, (req, res) => {
  *  需要提供密码确认
  * ============================================ */
 
-router.delete('/me', auth, (req, res) => {
+router.delete('/me', auth, async (req, res) => {
   const { password } = req.body;
 
   const user = db.prepare('SELECT id, password_hash, wechat_openid FROM users WHERE id = ?').get(req.userId);
@@ -227,7 +230,7 @@ router.delete('/me', auth, (req, res) => {
     if (!password) {
       return res.status(400).json({ error: '请输入密码以确认注销' });
     }
-    if (!bcrypt.compareSync(password, user.password_hash)) {
+    if (!await bcrypt.compare(password, user.password_hash)) {
       return res.status(401).json({ error: '密码错误' });
     }
   }

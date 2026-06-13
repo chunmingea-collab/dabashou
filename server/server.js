@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const rateLimit = require('express-rate-limit');
 const config = require('./config');
 const logger = require('./logger');
 const { requestLogger } = require('./middleware/logger');
@@ -14,24 +15,70 @@ app.use(cors({
 app.use(express.json({ limit: '100kb' }));
 app.use(requestLogger);
 
+/* 静态文件扩展名白名单 */
+const ALLOWED_EXT = ['.html', '.css', '.js', '.png', '.jpg', '.svg', '.ico', '.webp', '.gif', '.woff2', '.woff'];
+
+/* 速率限制共用配置 */
+const rateLimitDefaults = { standardHeaders: true, legacyHeaders: false };
+
+/* 全局温和速率限制：每 IP 15 秒最多 100 次 */
+if (config.rateLimit) {
+  app.use(rateLimit({
+    ...rateLimitDefaults,
+    windowMs: 15 * 1000,
+    max: 100,
+    message: { error: '请求过于频繁，请稍后再试' },
+  }));
+}
+
+/* 登录/注册严格速率限制：每 IP 1 分钟最多 10 次 */
+const authLimiter = config.rateLimit
+  ? rateLimit({ ...rateLimitDefaults, windowMs: 60 * 1000, max: 10, message: { error: '操作过于频繁，请 1 分钟后再试' } })
+  : null;
+
 /* API 路由 */
-app.use('/api/auth', require('./routes/auth'));
+const authRoute = require('./routes/auth');
+if (authLimiter) {
+  app.use('/api/auth', authLimiter, authRoute);
+} else {
+  app.use('/api/auth', authRoute);
+}
 app.use('/api/profiles', require('./routes/profiles'));
 
-/* 静态文件 —— 前端页面 */
-app.use(express.static(path.join(__dirname, '..')));
+/* 拒绝访问敏感文件（必须在 express.static 之前才能真正拦截） */
+app.use((req, res, next) => {
+  const dangerous = /\.(db|db-wal|db-shm|env|log|md|lock\.json|yml|yaml)$/i;
+  if (dangerous.test(req.path)) {
+    return res.status(404).end();
+  }
+  next();
+});
 
-/* SPA fallback：所有非 API 路径返回 index.html */
+/* 静态文件 —— 仅暴露前端资源 */
+app.use(express.static(path.join(__dirname, '..'), {
+  index: false,
+  setHeaders: (res, filePath) => {
+    if (!ALLOWED_EXT.includes(path.extname(filePath).toLowerCase())) {
+      res.setHeader('Cache-Control', 'no-store');
+    }
+  },
+}));
+
+/* SPA fallback */
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: '接口不存在' });
+  }
+  const ext = path.extname(req.path);
+  if (ext && ext !== '.html') {
+    return res.status(404).end();
   }
   res.sendFile(path.join(__dirname, '..', 'index.html'));
 });
 
 function start() {
   app.listen(config.port, () => {
-    logger.info({ port: config.port, wechatEnabled: config.wechat.enabled }, '搭把手 服务已启动');
+    logger.info({ port: config.port, wechatEnabled: config.wechat.enabled }, 'Huzoo 服务已启动');
   });
 
   /* 优雅关闭 */

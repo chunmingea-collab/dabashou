@@ -127,7 +127,7 @@ body {
 .search-inner input::placeholder { color: #bbb; }
 .search-icon {
   position: absolute; right: 40px; top: 50%; transform: translateY(-50%);
-  width: 20px; height: 20px; color: #bbb; pointer-events: none;
+  width: 20px; height: 20px; color: #bbb; cursor: pointer;
 }
 
 /* ========== 统计 ========== */
@@ -154,6 +154,7 @@ body {
   max-width: 1100px; margin: 0 auto; padding: 20px 24px 100px;
   display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 18px;
+  transition: opacity 0.15s;
 }
 .card {
   background: #fff; border-radius: 12px; padding: 22px 24px;
@@ -192,8 +193,7 @@ body {
 .wechat-label { font-size: 12px; color: #aaa; }
 .wechat-value { font-size: 14px; color: #07c160; font-weight: 500; }
 
-.card-actions { position: absolute; top: 14px; right: 14px; display: flex; gap: 6px; opacity: 0; transition: opacity .2s; }
-.card:hover .card-actions { opacity: 1; }
+.card-actions { position: absolute; top: 14px; right: 14px; display: flex; gap: 6px; opacity: 1; transition: opacity .2s; }
 .card-action-btn {
   background: none; border: 1px solid #e8e8e8; border-radius: 6px;
   width: 28px; height: 28px; font-size: 13px; cursor: pointer; display: flex;
@@ -261,7 +261,12 @@ body {
   color: #fff; font-size: 14px; font-weight: 500; cursor: pointer; transition: all .2s;
 }
 .btn-submit:hover { background: #06ad56; }
+.form-error { color: #ff4d4f; font-size: 13px; text-align: center; padding: 6px 0; }
 .form-creed { text-align: center; font-size: 13px; color: #aaa; margin-top: 16px; }
+
+/* ========== 键盘焦点 ========== */
+:focus-visible { outline: 2px solid #07c160; outline-offset: 2px; }
+.search-inner input:focus-visible { outline: none; /* search bar 用自己的边框 */ }
 
 /* ========== 确认弹窗 ========== */
 .confirm-overlay {
@@ -348,4 +353,13 @@ footer {
   .confirm-box p { font-size: 14px; }
 
   footer { padding: 20px 16px; font-size: 11px; }
+}
+
+/* ========== 无障碍：减少动效 ========== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
