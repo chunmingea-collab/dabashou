@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 const config = require('./config');
@@ -12,6 +13,8 @@ app.use(cors({
   origin: config.origin,
   credentials: true,
 }));
+/* Helmet 安全头（生产级别标配）*/
+app.use(helmet());
 app.use(express.json({ limit: '100kb' }));
 app.use(requestLogger);
 
@@ -44,6 +47,7 @@ if (authLimiter) {
   app.use('/api/auth', authRoute);
 }
 app.use('/api/profiles', require('./routes/profiles'));
+app.use('/api/messages', require('./routes/messages'));
 
 /* 拒绝访问敏感文件（必须在 express.static 之前才能真正拦截） */
 app.use((req, res, next) => {
@@ -58,8 +62,16 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, '..'), {
   index: false,
   setHeaders: (res, filePath) => {
-    if (!ALLOWED_EXT.includes(path.extname(filePath).toLowerCase())) {
+    const ext = path.extname(filePath).toLowerCase();
+    if (!ALLOWED_EXT.includes(ext)) {
+      /* 非白名单文件一律不缓存 */
       res.setHeader('Cache-Control', 'no-store');
+    } else if (ext === '.html') {
+      /* HTML 始终拉最新，保证改版后立即生效 */
+      res.setHeader('Cache-Control', 'no-cache');
+    } else {
+      /* css/js/图片等带 hash 语义的资源，浏览器缓存 1 小时 */
+      res.setHeader('Cache-Control', 'public, max-age=3600');
     }
   },
 }));
@@ -74,6 +86,12 @@ app.get('*', (req, res) => {
     return res.status(404).end();
   }
   res.sendFile(path.join(__dirname, '..', 'index.html'));
+});
+
+/* 全局错误处理中间件（兜住 async 路由未 catch 的异常） */
+app.use((err, req, res, next) => {
+  logger.error({ err: err.message, path: req.path }, '未捕获的服务器错误');
+  res.status(500).json({ error: '服务器内部错误' });
 });
 
 function start() {

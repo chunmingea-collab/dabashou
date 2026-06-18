@@ -16,7 +16,7 @@ module.exports = {
   /* JWT 密钥 */
   jwtSecret,
 
-  /* 允许的跨域来源 */
+  /* 允许的跨域来源（同源部署时无需关心，留作扩展用）*/
   origin: process.env.BASE_URL || process.env.ORIGIN || 'http://localhost:3000',
 
   /* 速率限制开关 */
@@ -29,4 +29,11 @@ module.exports = {
     appSecret: process.env.WECHAT_SECRET || '',
     redirectUri: (process.env.BASE_URL || 'http://localhost:3000') + '/api/auth/wechat/callback',
   },
+
+  /* 管理员用户名列表（逗号分隔，如 admin,zhangsan）
+     这些用户登录后可查看和处理举报。部署时在 .env 设置 ADMIN_USERNAMES */
+  adminUsernames: (process.env.ADMIN_USERNAMES || '')
+    .split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean),
 };

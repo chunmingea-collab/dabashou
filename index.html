@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Huzoo · 互助社交</title>
 <link rel="stylesheet" href="style.css">
+
+<!-- ====================================================
+     Google AdSense 广告脚本
+     部署上线后，按以下步骤启用：
+     1. 申请 https://www.google.com/adsense/start/
+     2. 审核通过后，把 ads-config.js 里 ADS_CONFIG.PUBLISHER_ID 改成你的发布商 ID
+     3. 在 ads-config.js 里填 ADS_ENABLED = true（默认 false 时不加载广告脚本）
+     启用后由 ads.js 自动注入 AdSense 脚本，避免未启用时白白加载
+     ==================================================== -->
 </head>
 <body>
 
@@ -57,8 +66,13 @@
       <span class="logo">Huzoo</span>
       <div class="topbar-right">
         <span class="current-user" id="current-user"></span>
+        <button class="btn-msg" id="btn-messages" title="我的消息">
+          消息
+          <span class="msg-badge hidden" id="msg-badge"></span>
+        </button>
+        <button class="btn-fav" id="btn-favorites" title="我的收藏">收藏</button>
         <button class="btn-logout" id="btn-logout">退出</button>
-        <button class="btn-delete-account" id="btn-delete-account">注销账户</button>
+        <button class="btn-delete-account" id="btn-delete-account">注销</button>
       </div>
     </div>
   </header>
@@ -89,9 +103,42 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </span>
     </div>
+    <div class="sort-bar">
+      <div class="sort-tabs">
+        <button class="sort-tab active" data-sort="latest">最新</button>
+        <button class="sort-tab" data-sort="popular">热门</button>
+      </div>
+    </div>
   </div>
 
-  <div class="stats" id="stats-bar"></div>
+  <div class="stats-wrap">
+    <div class="stats" id="stats-bar"></div>
+    <div class="stats-panel hidden" id="stats-panel">
+      <div class="stats-col">
+        <div class="stats-col-title">热门能力</div>
+        <div class="tag-cloud" id="top-offers"></div>
+      </div>
+      <div class="stats-col">
+        <div class="stats-col-title">热门标签</div>
+        <div class="tag-cloud" id="top-keywords"></div>
+      </div>
+      <div class="stats-col">
+        <div class="stats-col-title">近 7 天新增</div>
+        <div class="trend-chart" id="trend-chart"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 顶部横幅广告位（自动广告 + 手动展示广告位）-->
+  <!-- 部署上线、AdSense 审核通过后此区域会显示真实广告 -->
+  <div class="ad-slot ad-top" id="ad-top">
+    <ins class="adsbygoogle"
+         style="display:block"
+         data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+         data-ad-slot="1111111111"
+         data-ad-format="auto"
+         data-full-width-responsive="true"></ins>
+  </div>
 
   <div class="hot-tags">
     <span class="hot-label">试试搜这些：</span>
@@ -111,12 +158,37 @@
 
   <div class="card-grid" id="card-grid"></div>
 
+  <!-- 骨架屏：数据加载时显示，避免白屏 -->
+  <div class="skeleton-grid hidden" id="skeleton-grid">
+    <div class="skeleton-card"><div class="sk-line sk-title"></div><div class="sk-line"></div><div class="sk-line sk-short"></div><div class="sk-block"></div></div>
+    <div class="skeleton-card"><div class="sk-line sk-title"></div><div class="sk-line"></div><div class="sk-line sk-short"></div><div class="sk-block"></div></div>
+    <div class="skeleton-card"><div class="sk-line sk-title"></div><div class="sk-line"></div><div class="sk-line sk-short"></div><div class="sk-block"></div></div>
+    <div class="skeleton-card"><div class="sk-line sk-title"></div><div class="sk-line"></div><div class="sk-line sk-short"></div><div class="sk-block"></div></div>
+    <div class="skeleton-card"><div class="sk-line sk-title"></div><div class="sk-line"></div><div class="sk-line sk-short"></div><div class="sk-block"></div></div>
+    <div class="skeleton-card"><div class="sk-line sk-title"></div><div class="sk-line"></div><div class="sk-line sk-short"></div><div class="sk-block"></div></div>
+  </div>
+
+  <!-- 加载更多按钮 -->
+  <div class="load-more hidden" id="load-more">
+    <button type="button" class="btn-load-more" id="btn-load-more">加载更多</button>
+  </div>
+
   <div class="empty-state hidden" id="empty-state">
     <div class="empty-icon">
       <svg viewBox="0 0 80 80" fill="none"><circle cx="40" cy="40" r="38" stroke="#ccc" stroke-width="2" stroke-dasharray="6 4"/><text x="40" y="36" text-anchor="middle" fill="#ccc" font-size="28">🤝</text></svg>
     </div>
     <p>还没人亮出本事</p>
     <p class="empty-sub">点右下角 +，第一个来。不丢人。</p>
+  </div>
+
+  <!-- 底部展示广告位 -->
+  <div class="ad-slot ad-bottom" id="ad-bottom">
+    <ins class="adsbygoogle"
+         style="display:block"
+         data-ad-client="ca-pub-XXXXXXXXXXXXXXXX"
+         data-ad-slot="2222222222"
+         data-ad-format="auto"
+         data-full-width-responsive="true"></ins>
   </div>
 
   <button class="fab" id="fab-add">+</button>
@@ -155,8 +227,13 @@
         <span class="field-hint">不是求助，是交换。直接说你要什么，别人能给你就联系你</span>
       </div>
       <div class="form-group">
+        <label>城市（选填）</label>
+        <input type="text" id="city" placeholder="你所在的城市，例如：北京 / 上海 / 广州" maxlength="20">
+        <span class="field-hint">填写后可被同城的人优先找到</span>
+      </div>
+      <div class="form-group">
         <label>微信号 <span class="required">*</span></label>
-        <input type="text" id="wechat" placeholder="你的微信号" required maxlength="30">
+        <input type="text" id="wechat" placeholder="你的微信号（登录用户可见）" required maxlength="30">
       </div>
       <p class="form-error hidden" id="form-error"></p>
       <div class="form-actions">
@@ -182,7 +259,65 @@
   </div>
 </div>
 
-<script src="app.js"></script>
+<!-- ==================== 档案详情弹窗 ==================== -->
+<div class="modal-overlay hidden" id="detail-overlay">
+  <div class="modal detail-modal">
+    <div class="modal-header">
+      <h2 id="detail-title">互助档案</h2>
+      <button class="modal-close" id="detail-close">&times;</button>
+    </div>
+    <div id="detail-body" class="detail-body"></div>
+  </div>
+</div>
+
+<!-- ==================== 消息系统弹窗 ==================== -->
+<div class="modal-overlay hidden" id="msg-overlay">
+  <div class="modal msg-modal">
+    <div class="modal-header">
+      <h2 id="msg-title">我的消息</h2>
+      <button class="modal-close" id="msg-close">&times;</button>
+    </div>
+    <div class="msg-layout">
+      <!-- 左：会话列表 -->
+      <div class="msg-threads" id="msg-threads">
+        <div class="msg-threads-empty hidden" id="msg-threads-empty">还没有消息</div>
+      </div>
+      <!-- 右：聊天区 -->
+      <div class="msg-chat hidden" id="msg-chat">
+        <div class="msg-chat-header" id="msg-chat-header"></div>
+        <div class="msg-chat-body" id="msg-chat-body"></div>
+        <form class="msg-chat-input" id="msg-chat-form">
+          <textarea id="msg-input" placeholder="说点什么..." rows="2" maxlength="500"></textarea>
+          <button type="submit" class="btn-send">发送</button>
+        </form>
+      </div>
+      <!-- 空状态：未选择会话 -->
+      <div class="msg-chat-placeholder" id="msg-chat-placeholder">
+        <p>选择一个会话开始聊天</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 发私信弹窗 ==================== -->
+<div class="confirm-overlay hidden" id="dm-overlay">
+  <div class="confirm-box dm-box">
+    <p id="dm-to-name" class="dm-to"></p>
+    <textarea id="dm-input" placeholder="说点什么... (最多 500 字)" rows="4" maxlength="500" style="width:100%;padding:10px 12px;border:1.5px solid #e8e8e8;border-radius:8px;font-size:14px;font-family:inherit;resize:none;outline:none;margin-bottom:12px;"></textarea>
+    <p class="login-error hidden" id="dm-error"></p>
+    <div class="confirm-actions">
+      <button class="btn-cancel" id="dm-cancel">取消</button>
+      <button class="btn-submit" id="dm-ok">发送私信</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast 通知容器 -->
+<div id="toast-container"></div>
+
+<script defer src="ads-config.js"></script>
+<script defer src="ads.js"></script>
+<script defer src="app.js"></script>
 <footer>
   <p>Huzoo 互圈 — 不铺垫，不客套，直接交换。能帮就帮，没空就换。</p>
 </footer>

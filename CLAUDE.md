@@ -8,6 +8,10 @@ Huzoo (互圈) is a mutual-help social platform — users create profiles listin
 
 **Stack:** Node.js + Express + SQLite (better-sqlite3), vanilla JS frontend, no build step.
 
+**Deployment:** Self-hosted on Aliyun Lighthouse (轻量应用服务器), single-machine same-origin deploy. PM2 for process management, Nginx for reverse proxy + HTTPS. See [DEPLOY.md](./DEPLOY.md) for the complete beginner-friendly guide.
+
+**Monetization:** Google AdSense display ads. Ad slots are pre-wired in the HTML/JS but disabled by default (`ADS_ENABLED: false` in `ads-config.js`). Flip the switch after AdSense approval.
+
 ## Commands
 
 ```bash
@@ -17,26 +21,30 @@ cd server && npm install
 # Start the server (production)
 node server/server.js
 
-# Start the server (from server/ directory)
-cd server && npm start
+# Start the server (dev mode, auto-reload)
+cd server && npm run dev
+
+# Run tests
+cd server && npm test
 ```
 
-There is no test suite, linter, or build pipeline. The frontend is raw HTML/CSS/JS — no bundler or framework.
+There is no build step. The frontend is raw HTML/CSS/JS served statically.
 
 ## Architecture
 
 ```
-                   ┌─────────────────��────┐
-                   │   index.html         │
-                   │   app.js (vanilla)   │  ← SPA: login page / main page
-                   │   style.css          │
-                   └────────┬─────────────┘
-                            │ fetch() calls to /api/*
-                   ┌────────▼─────────────┐
-                   │  server/server.js    │  ← Express app entry
-                   │  server/config.js    │  ← All config from env vars
-                   │  server/db.js        │  ← SQLite init + schema
-                   └────────┬─────────────┘
+                   ┌─────────────────────────┐
+                   │   index.html            │
+                   │   app.js (vanilla)      │  ← SPA: login page / main page
+                   │   ads.js + ads-config.js│  ← AdSense integration
+                   │   style.css             │
+                   └────────┬────────────────┘
+                            │ fetch() to ${API_BASE}/api/*
+                   ┌────────▼────────────────┐
+                   │  server/server.js       │  ← Express app entry
+                   │  server/config.js       │  ← All config from env vars
+                   │  server/db.js           │  ← SQLite init + schema
+                   └────────┬────────────────┘
                             │
               ┌─────────────┼─────────────┐
      ┌────────▼──────┐ ┌────▼─────────┐
@@ -45,55 +53,69 @@ There is no test suite, linter, or build pipeline. The frontend is raw HTML/CSS/
      │  - login       │ │  - GET /mine   │
      │  - wechat OAuth│ │  - PUT /mine   │
      │  - GET /me     │ │  - GET /stats  │
-     └───────┬────────┘ └��─────┬────────┘
+     └───────┬────────┘ └─────┬────────┘
              │                 │
      ┌───────▼─────────┐       │
-     │ middleware/auth.js│      │
-     │  - auth (required)│──────┘
+     │ middleware/auth.js│──────┘
+     │  - auth (required)│
      │  - optionalAuth
      └─────────────────┘
 ```
 
-### Backend (server/)
-
-- **`server/server.js`** — Express app. Mounts CORS + JSON body parser, then:
-  - `/api/auth/*` — authentication routes
-  - `/api/profiles/*` — profile CRUD + search
-  - `express.static('..')` serves the root HTML/CSS/JS
-  - SPA fallback: all non-`/api/` GETs return `index.html`
-
-- **`server/db.js`** — Creates/opens the SQLite database (WAL mode, foreign keys on). Defines two tables:
-  - `users` — id, username, password_hash (bcrypt), nickname, avatar, wechat_openid/unionid
-  - `profiles` — id, user_id (FK→users, 1:1), nickname, intro, offers (JSON array string), keywords (JSON array string), needs (JSON array string), wechat
-  - The profiles table stores list fields (`offers`, `keywords`, `needs`) as JSON-encoded strings, parsed at the route layer via `safeJson()`.
-
-- **`server/config.js`** — All configuration reads from environment variables with sensible defaults. WeChat login auto-enables only when `WECHAT_APPID` is set.
-
-- **`server/middleware/auth.js`** — Two middleware: `auth` (rejects with 401 if no valid Bearer token) and `optionalAuth` (parses token if present, continues either way). Both use JWT with the secret from config.
-
-- **`server/routes/auth.js`** — Registration (bcrypt hash + auto-create blank profile), username/password login, WeChat OAuth flow (`/wechat/url` returns the QR connect URL, `/wechat/callback` handles the redirect), and `/me` to get current user + profile.
-
-- **`server/routes/profiles.js`** — Public profile listing with keyword search across nickname/intro/keywords/offers/needs (LIKE query), pagination (page/size params), "my profile" get-or-create + update, and a simple `/stats` endpoint returning total profile count. Profile updates sync the nickname to both tables.
-
 ### Frontend (root)
 
-- **`index.html`** — Two pages in one file: login page (WeChat QR or username/password with login/register tabs) and main page (search bar, hot tags, card grid, FAB button). Also contains two overlay modals: profile edit form and delete confirmation.
+- **`index.html`** — Two pages in one file: login page (WeChat QR or username/password with login/register tabs) and main page (search bar, hot tags, card grid, FAB button). Also contains two overlay modals: profile edit form and delete confirmation. AdSense script tag in `<head>`, three `<div class="ad-slot">` for banner ads.
 
 - **`app.js`** — Vanilla JS SPA. Key patterns:
+  - `API` is a simple constant `/api` (same-origin; frontend and backend served from the same Express app via `express.static`).
   - `Auth` object wraps localStorage for token/userId/nickname persistence.
-  - `api()` helper adds the Bearer token header and parses JSON responses.
-  - Search is live (fires on `input` event), queries the API directly (no client-side filtering — the server does the LIKE search).
-  - Profile form uses newlines for multi-value fields (offers/needs) and comma/space-separated input for keywords.
-  - WeChat callback: token arrives via URL hash fragment (after OAuth redirect), parsed on page load.
-  - "Delete" actually clears the profile fields rather than removing the record (profile row is kept, just emptied).
+  - `api()` helper adds Bearer token header and parses JSON responses.
+  - `render()` builds card HTML via string templates. After `innerHTML` is set, calls `Ads.injectInFeedAds()` to insert native ads every 6 cards (only if ads enabled).
 
-- **`style.css`** — Single CSS file, no preprocessor. Responsive: desktop card grid (auto-fill, minmax 320px), tablet breakpoint at 1024px, mobile at 768px (single-column, stacked modals, smaller touch targets). WeChat green (#07c160) as the brand color.
+- **`ads-config.js`** — **Single point of ad configuration**. `ADS_ENABLED`, `PUBLISHER_ID`, `SLOT_TOP`/`SLOT_BOTTOM`/`SLOT_INFEED`, `INFEED_INTERVAL`. Default: disabled.
+
+- **`ads.js`** — Ad rendering logic. `Ads.enabled()` checks the flag. `Ads.initFixedSlots()` activates top/bottom banners on DOMContentLoaded. `Ads.injectInFeedAds(container)` inserts native ad units between cards.
+
+- **`style.css`** — Single CSS file. `.ad-slot` is `display:none` by default; `.ad-slot.ad-active` shows it (only added when ads enabled). `.ad-infeed` blends with `.card` style. Responsive: desktop card grid, tablet at 1024px, mobile at 768px.
+
+### Deployment (deploy/)
+
+- **`deploy/setup.sh`** — One-command setup script. Installs Node.js 20 LTS, PM2, Nginx, generates `.env` with random JWT_SECRET, starts the app, configures Nginx reverse proxy. Run as `sudo bash deploy/setup.sh your-domain.com`.
+- **`deploy/update.sh`** — Re-run after pushing code changes. Reinstalls deps, restarts PM2 + Nginx.
+- **`deploy/nginx.conf`** — Nginx site config template. HTTP→HTTPS redirect, SSL hardening, gzip, reverse proxy to localhost:3000.
+- **`server/ecosystem.config.js`** — PM2 config. Reads env from `.env` via `dotenv`. Auto-restart on crash, max 500MB memory.
+
+### Backend (server/)
+
+- **`server.js`** — Express app. CORS + JSON body parser + request logger, then routes + static file serving + SPA fallback. Same-origin deployment means CORS is essentially unused in practice.
+
+- **`db.js`** — Creates/opens SQLite database (WAL mode, foreign keys on). Tables: `users` (id, username, password_hash bcrypt, nickname, avatar, wechat_openid/unionid) and `profiles` (id, user_id FK 1:1, nickname, intro, offers/keywords/needs as JSON strings, wechat).
+
+- **`config.js`** — Environment-driven config. Reads from `process.env` (or `.env` file via dotenv in production). `origin` is a single string for CORS allowlist.
+
+- **`middleware/auth.js`** — `auth` (rejects 401 without valid Bearer token) and `optionalAuth` (parses token if present, continues either way). JWT with secret from config.
+
+- **`routes/auth.js`** — Registration (bcrypt + auto-create blank profile), username/password login, WeChat OAuth web flow, `GET /me`, `DELETE /me` (account deletion with password confirmation, WeChat users skip).
+
+- **`routes/profiles.js`** — Public listing with LIKE search across nickname/intro/keywords/offers/needs, pagination. "My profile" get-or-create + update (syncs nickname to users table). `/stats` endpoint with 30s in-memory cache.
+
+## Monetization: Google AdSense
+
+Display ads (banner + in-feed native). Not the original "watch ad to unlock" model — that required WeChat Mini Program + 流量主 (300 RMB business verification). Free web hosting + AdSense is the zero-cost alternative.
+
+**Setup** (after deployment):
+1. Apply at https://www.google.com/adsense/start/
+2. Pass review (need real content, working HTTPS site)
+3. Get publisher ID (`ca-pub-xxxxxxxx`) + create 3 ad units
+4. Fill `ads-config.js` (set `ADS_ENABLED: true`, fill IDs)
+5. Push to GitHub → Cloudflare auto-deploys → ads appear
+
+Before that, `ADS_ENABLED: false` keeps the site ad-free for development.
 
 ## Data Model Notes
 
-- `profiles.offers`, `profiles.keywords`, `profiles.needs` are stored as JSON string arrays (e.g., `'["item1","item2"]'`). Always parse with the `safeJson()` helper before use.
-- User deletion is not implemented — profiles have `ON DELETE CASCADE` on the FK, but there's no delete user endpoint.
-- Profile "deletion" from the UI just blanks all fields; it doesn't remove the row.
+- `profiles.offers`, `profiles.keywords`, `profiles.needs` are JSON string arrays. Parse with `safeJson()` before use.
+- Profile "deletion" from UI blanks all fields; user deletion CASCADEs.
 - JWT tokens expire after 30 days, stored in localStorage.
 
 ## Environment Variables
@@ -101,8 +123,42 @@ There is no test suite, linter, or build pipeline. The frontend is raw HTML/CSS/
 | Variable | Default | Purpose |
 |---|---|---|
 | `PORT` | 3000 | Server port |
-| `JWT_SECRET` | (hardcoded dev value) | JWT signing key — must change in production |
+| `JWT_SECRET` | (hardcoded dev value) | JWT signing key — must change in production (process exits if unset in `NODE_ENV=production`). On the server, `deploy/setup.sh` auto-generates this into `server/.env`. |
 | `DB_PATH` | `server/data.db` | SQLite file path |
-| `BASE_URL` | `http://localhost:3000` | Public URL for WeChat OAuth redirect |
+| `BASE_URL` / `ORIGIN` | `http://localhost:3000` | Public URL (used for CORS and WeChat OAuth redirect) |
+| `RATE_LIMIT` | `true` | Set to `false` to disable rate limits |
 | `WECHAT_APPID` | (none) | WeChat Open Platform AppID; set to enable WeChat login |
 | `WECHAT_SECRET` | (none) | WeChat Open Platform AppSecret |
+
+In production, all of these live in `server/.env` (loaded by dotenv). Edit with `nano /var/www/huzoo/server/.env`, then `pm2 restart huzoo`.
+
+## Testing
+
+```bash
+cd server && npm test
+```
+
+29 tests across 2 suites:
+- `auth.test.js` — register, login, me, account deletion, wechat url
+- `profiles.test.js` — list, search, mine, update, delete, stats
+
+Tests use temp SQLite files and wipe tables in `beforeEach`.
+
+## Deployment
+
+See [DEPLOY.md](./DEPLOY.md) for the complete Aliyun + beginner guide:
+1. Buy Aliyun Lighthouse (轻量应用服务器) — Ubuntu 22.04, 2 core / 2 GB
+2. Domain ICP 备案 (7-20 day review, free)
+3. DNS A record → server IP
+4. Upload code via scp
+5. Run `sudo bash deploy/setup.sh your-domain.com` (installs Node 20 LTS + PM2 + Nginx + generates .env)
+6. Apply HTTPS via certbot
+
+Quick prod env file (`server/.env`, auto-generated by setup.sh):
+```
+NODE_ENV=production
+PORT=3000
+JWT_SECRET=<random 64-char hex>
+BASE_URL=https://your-domain.com
+RATE_LIMIT=true
+```
