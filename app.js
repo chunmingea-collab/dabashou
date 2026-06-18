@@ -187,10 +187,20 @@ $loginForm.addEventListener('submit', async (e) => {
 
   $loginError.classList.add('hidden');
 
+  /* 前端输入校验 */
+  if (!username) { showErr('请输入用户名'); return; }
+  if (username.length < 3 || username.length > 20) { showErr('用户名需 3-20 个字符'); return; }
+  if (!/^[a-zA-Z0-9_]+$/.test(username)) { showErr('用户名只能包含字母、数字和下划线'); return; }
+  if (!password) { showErr('请输入密码'); return; }
+  if (password.length < 6 || password.length > 50) { showErr('密码需 6-50 个字符'); return; }
+  if (loginMode === 'register') {
+    if (!nickname) { showErr('请输入昵称'); return; }
+    if (nickname.length < 2 || nickname.length > 20) { showErr('昵称需 2-20 个字符'); return; }
+  }
+
   try {
     let data;
     if (loginMode === 'register') {
-      if (!nickname) { showErr('请输入昵称'); return; }
       data = await api('/auth/register', {
         method: 'POST',
         body: JSON.stringify({ username, password, nickname }),
@@ -699,24 +709,33 @@ function closeModal() { $modalOverlay.classList.add('hidden'); }
 /* ==================== 提交档案 ==================== */
 $profileForm.addEventListener('submit', async (e) => {
   e.preventDefault();
+  const nickname = $nickname.value.trim();
+  const intro = $intro.value.trim();
   const offersList = $offers.value.split('\n').map(s => s.trim()).filter(s => s);
   const needsList = $needs.value.split('\n').map(s => s.trim()).filter(s => s);
   const keywordsList = $keywords.value.split(/[,，\s]+/).map(s => s.trim()).filter(s => s);
+  const wechat = ($wechat ? $wechat.value.trim() : '').slice(0, 50);
 
+  /* 前端输入校验 */
+  if (!nickname) { $formError.textContent = '请填写昵称'; $formError.classList.remove('hidden'); return; }
+  if (nickname.length < 2 || nickname.length > 20) { $formError.textContent = '昵称需 2-20 个字符'; $formError.classList.remove('hidden'); return; }
+  if (intro.length > 200) { $formError.textContent = '个人介绍最多 200 字'; $formError.classList.remove('hidden'); return; }
   if (!offersList.length) { $formError.textContent = '请填写至少一条你能提供的能力或资源'; $formError.classList.remove('hidden'); return; }
+  if (offersList.length > 10) { $formError.textContent = '能力最多填 10 条'; $formError.classList.remove('hidden'); return; }
   if (!keywordsList.length) { $formError.textContent = '请填写至少一个关键字标签'; $formError.classList.remove('hidden'); return; }
+  if (keywordsList.length > 10) { $formError.textContent = '关键字最多填 10 个'; $formError.classList.remove('hidden'); return; }
   $formError.classList.add('hidden');
 
   try {
     await api('/profiles/mine', {
       method: 'PUT',
       body: JSON.stringify({
-        nickname: $nickname.value.trim(),
-        intro: $intro.value.trim(),
+        nickname,
+        intro,
         offers: offersList,
         keywords: keywordsList,
         needs: needsList,
-        wechat: $wechat.value.trim(),
+        wechat,
         city: $city ? $city.value.trim() : '',
       }),
     });
@@ -1086,7 +1105,9 @@ function renderChatMessages(msgs) {
 $msgChatForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const body = $msgInput.value.trim();
-  if (!body || !currentThread) return;
+  if (!body) { toast('消息不能为空', 'error'); return; }
+  if (body.length > 500) { toast('消息最多 500 字', 'error'); return; }
+  if (!currentThread) return;
   const submitBtn = $msgChatForm.querySelector('.btn-send');
   submitBtn.disabled = true;
   try {

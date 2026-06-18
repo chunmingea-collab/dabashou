@@ -328,9 +328,10 @@ router.put('/mine', auth, (req, res) => {
   });
 });
 
-/* ============================================
- *  DELETE /api/profiles/mine  删除我的档案
- * ============================================ */
+/**
+ * DELETE /api/profiles/mine
+ * 删除当前用户的档案
+ */
 router.delete('/mine', auth, (req, res) => {
   /* 删除前先查询，确保存在 */
   const existing = stmtProfileExists.get(req.userId);
@@ -349,10 +350,11 @@ router.delete('/mine', auth, (req, res) => {
   res.json({ success: true });
 });
 
-/* ============================================
- *  POST   /api/profiles/:id/favorite  收藏
- *  DELETE /api/profiles/:id/favorite  取消收藏
- * ============================================ */
+/**
+ * POST /api/profiles/:id/favorite
+ * 收藏指定档案
+ * @param {string} id - 档案 ID（路径参数）
+ */
 router.post('/:id/favorite', auth, (req, res) => {
   const { id } = req.params;
   /* 确认档案存在 */
@@ -362,15 +364,23 @@ router.post('/:id/favorite', auth, (req, res) => {
   res.json({ success: true, favorited: true });
 });
 
+/**
+ * DELETE /api/profiles/:id/favorite
+ * 取消收藏指定档案
+ * @param {string} id - 档案 ID（路径参数）
+ */
 router.delete('/:id/favorite', auth, (req, res) => {
   const { id } = req.params;
   stmtRemoveFavorite.run(req.userId, id);
   res.json({ success: true, favorited: false });
 });
 
-/* ============================================
- *  GET /api/profiles/favorites  我的收藏列表
- * ============================================ */
+/**
+ * GET /api/profiles/favorites
+ * 获取当前用户的收藏列表（分页）
+ * @query {number} [page=1]
+ * @query {number} [size=20]
+ */
 router.get('/favorites', auth, (req, res) => {
   const { page = 1, size = 20 } = req.query;
   const limit = Math.min(Number(size) || 20, 50);
@@ -404,7 +414,13 @@ router.get('/favorites', auth, (req, res) => {
  *  举报相关 API
  * ============================================ */
 
-/* POST /api/profiles/:id/report  普通用户举报档案 */
+/**
+ * POST /api/profiles/:id/report
+ * 举报指定档案
+ * @param {string} id - 档案 ID（路径参数）
+ * @body {string} reason - 举报原因（必须是 REPORT_REASONS 之一）
+ * @body {string} [detail] - 补充说明（最多 500 字）
+ */
 router.post('/:id/report', auth, (req, res) => {
   const { id } = req.params;
   const { reason, detail } = req.body;
@@ -436,7 +452,11 @@ router.post('/:id/report', auth, (req, res) => {
   res.json({ success: true });
 });
 
-/* GET /api/profiles/reports  管理员查看举报列表 */
+/**
+ * GET /api/profiles/reports
+ * 管理员查看举报列表
+ * @query {string} [status] - 过滤状态：pending|dismissed|removed
+ */
 router.get('/reports', auth, adminAuth, (req, res) => {
   const { status } = req.query;
   const validStatus = ['pending', 'dismissed', 'removed'];
@@ -460,7 +480,12 @@ router.get('/reports', auth, adminAuth, (req, res) => {
   res.json({ reports });
 });
 
-/* PATCH /api/profiles/reports/:id  管理员处理举报 */
+/**
+ * PATCH /api/profiles/reports/:id
+ * 管理员处理举报（驳回或删除档案）
+ * @param {string} id - 举报记录 ID
+ * @body {string} status - 处理结果：dismissed|removed
+ */
 router.patch('/reports/:id', auth, adminAuth, (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
@@ -483,10 +508,11 @@ router.patch('/reports/:id', auth, adminAuth, (req, res) => {
   res.json({ success: true, status });
 });
 
-/* ============================================
- *  GET /api/profiles/stats  统计
- *  返回：总人数 + 热门能力 TOP10 + 热门关键词 TOP10 + 近7天新增趋势
- * ============================================ */
+/**
+ * GET /api/profiles/stats
+ * 获取平台统计信息（含 60 秒内存缓存）
+ * @returns {object} total, topOffers, topKeywords, recentTrend
+ */
 let statsCache = { data: null, timestamp: 0 };
 
 router.get('/stats', (req, res) => {

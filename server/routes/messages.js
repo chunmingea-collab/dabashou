@@ -39,10 +39,12 @@ const stmtDeleteMsg = db.prepare(`
   DELETE FROM messages WHERE id = ? AND (sender_id = ? OR receiver_id = ?)
 `);
 
-/* ============================================================
- * POST /api/messages      发送私信
- * 限速：10 分钟最多 10 条（由 msgLimiter 中间件执行）
- * ============================================================ */
+/**
+ * POST /api/messages
+ * 发送私信（需登录，受速率限制）
+ * @body {string} receiver_id - 接收者用户 ID
+ * @body {string} body - 消息内容（最多 500 字）
+ */
 const postMiddleware = msgLimiter ? [auth, msgLimiter] : [auth];
 router.post('/', ...postMiddleware, (req, res) => {
   const { receiver_id, body } = req.body;
@@ -71,19 +73,21 @@ router.post('/', ...postMiddleware, (req, res) => {
   res.json({ success: true, id, created_at: now });
 });
 
-/* ============================================================
- * GET /api/messages/unread  未读消息数
- * ============================================================ */
+/**
+ * GET /api/messages/unread
+ * 获取当前用户的未读消息数
+ */
 router.get('/unread', auth, (req, res) => {
   const { count } = stmtUnreadCount.get(req.userId);
   res.json({ count });
 });
 
-/* ============================================================
- * GET /api/messages/threads  会话列表（inbox）
- *  支持分页：?page=1&size=20
- *  每个对话只返回最新一条消息 + 未读数
- * ============================================================ */
+/**
+ * GET /api/messages/threads
+ * 获取会话列表（收件箱），按最后消息时间倒序
+ * @query {number} [page=1]
+ * @query {number} [size=20]
+ */
 router.get('/threads', auth, (req, res) => {
   const page = Math.max(Number(req.query.page) || 1, 1);
   const size = Math.min(Math.max(Number(req.query.size) || 20, 1), 50);
@@ -130,11 +134,13 @@ router.get('/threads', auth, (req, res) => {
   res.json({ threads, total, page, size });
 });
 
-/* ============================================================
- * GET /api/messages/thread/:userId  获取与某人的对话记录
- *  支持分页：?page=1&size=30
- *  返回时间正序（UI 从旧到新展示）
- * ============================================================ */
+/**
+ * GET /api/messages/thread/:userId
+ * 获取与指定用户的对话记录（时间正序）
+ * @param {string} userId - 对话对方的用户 ID
+ * @query {number} [page=1]
+ * @query {number} [size=30]
+ */
 router.get('/thread/:userId', auth, (req, res) => {
   const otherId = req.params.userId;
   const { page = 1, size = 30 } = req.query;
@@ -158,9 +164,11 @@ router.get('/thread/:userId', auth, (req, res) => {
   res.json({ messages: msgs.reverse(), page: Number(page), size: limit });
 });
 
-/* ============================================================
- * DELETE /api/messages/:id  删除单条消息（自己的）
- * ============================================================ */
+/**
+ * DELETE /api/messages/:id
+ * 删除单条消息（仅限发送者或接收者）
+ * @param {string} id - 消息 ID
+ */
 router.delete('/:id', auth, (req, res) => {
   const result = stmtDeleteMsg.run(req.params.id, req.userId, req.userId);
   if (result.changes === 0) {
