@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: huzoo
+    env: docker
+    region: singapore
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: DB_PATH
+        value: /data/data.db
+      - key: JWT_SECRET
+        generateValue: true
+    disk:
+      name: huzoo-data
+      mountPath: /data
+      sizeGB: 1

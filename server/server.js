@@ -14,7 +14,20 @@ app.use(cors({
   credentials: true,
 }));
 /* Helmet 安全头（生产级别标配）*/
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "https://pagead2.googlesyndication.com"],
+      frameSrc: ["'self'", "https://googleads.g.doubleclick.net"],
+      imgSrc: ["'self'", "data:", "https://pagead2.googlesyndication.com"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+    },
+  },
+}));
 app.use(express.json({ limit: '100kb' }));
 app.use(requestLogger);
 
@@ -76,6 +89,17 @@ app.use(express.static(path.join(__dirname, '..'), {
   },
 }));
 
+/* 健康检查端点（供负载均衡器和容器编排使用）
+   必须在 SPA fallback 之前定义，否则会被 * 路由拦截 */
+app.get('/health', (req, res) => {
+  try {
+    require('./db').prepare('SELECT 1').get();
+    res.json({ status: 'ok', timestamp: Date.now() });
+  } catch {
+    res.status(503).json({ status: 'degraded', timestamp: Date.now() });
+  }
+});
+
 /* SPA fallback */
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) {
@@ -99,10 +123,17 @@ function start() {
     logger.info({ port: config.port, wechatEnabled: config.wechat.enabled }, 'Huzoo 服务已启动');
   });
 
-  /* 优雅关闭 */
+  /* 优雅关闭：停止接收新连接，等待已有请求处理完成 */
   function shutdown(signal) {
-    logger.info({ signal }, '收到信号，正在关闭...');
-    try { require('./db').close(); } catch {}
+    logger.info({ signal }, '收到信号，正在关闭（停止接收新请求）...');
+    /* 关闭数据库连接前先 checkpoint WAL，避免数据丢失 */
+    try {
+      const db = require('./db');
+      db.pragma('wal_checkpoint(TRUNCATE)');
+      db.close();
+    } catch (e) {
+      logger.warn({ err: e.message }, '数据库关闭时出现异常');
+    }
     process.exit(0);
   }
   process.on('SIGTERM', () => shutdown('SIGTERM'));

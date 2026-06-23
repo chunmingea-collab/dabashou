@@ -35,22 +35,27 @@ const stmtDeleteUser = db.prepare('DELETE FROM users WHERE id = ?');
  * @returns {{ token: string, userId: string, nickname: string }}
  */
 router.post('/register', asyncHandler(async (req, res) => {
-  const username = sanitizeString(req.body.username, 20);
-  const password = req.body.password || '';
-  const nickname = sanitizeString(req.body.nickname, 20);
+  const rawUsername = typeof req.body.username === 'string' ? req.body.username.trim() : '';
+  const rawPassword = req.body.password || '';
+  const rawNickname = typeof req.body.nickname === 'string' ? req.body.nickname.trim() : '';
 
-  if (!username || !password || !nickname) {
+  if (!rawUsername || !rawPassword || !rawNickname) {
     return res.status(400).json({ error: '用户名、密码、昵称不能为空' });
   }
-  if (username.length < 2 || username.length > 20) {
+  if (rawUsername.length < 2 || rawUsername.length > 20) {
     return res.status(400).json({ error: '用户名需 2~20 个字符' });
   }
-  if (password.length < 6 || password.length > 128) {
+  if (rawPassword.length < 6 || rawPassword.length > 128) {
     return res.status(400).json({ error: '密码需 6~128 位' });
   }
-  if (nickname.length > 20) {
+  if (rawNickname.length > 20) {
     return res.status(400).json({ error: '昵称最多 20 个字符' });
   }
+
+  /* 清洗后入库（sanitizeString 带 maxLen 做安全兜底截断）*/
+  const username = sanitizeString(rawUsername, 20);
+  const password = rawPassword; /* 密码不经过 HTML 清洗 */
+  const nickname = sanitizeString(rawNickname, 20);
 
   const existing = stmtFindUsername.get(username);
   if (existing) {

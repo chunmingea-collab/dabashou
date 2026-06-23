@@ -1,0 +1,32 @@
+app = "huzoo"
+primary_region = "nrt"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[[services]]
+  internal_port = 3000
+
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+
+[mounts]
+  source = "huzoo_data"
+  destination = "/data"
+
+[[vm]]
+  memory = "256mb"
+
+[services.concurrency]
+  type = "connections"
+  hard_limit = 25
+  soft_limit = 20
+
+[http_service]
+  auto_stop_machines = true
+  auto_start_machines = true

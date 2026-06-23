@@ -23,22 +23,38 @@ async function api(path, opts = {}) {
   const t = Auth._t();
   if (t) headers['Authorization'] = 'Bearer ' + t;
 
-  const { signal, timeout = 15000, ...restOpts } = opts;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-  if (signal) signal.addEventListener('abort', () => controller.abort());
+  const { signal, timeout = 15000, retries = 1, ...restOpts } = opts;
 
-  try {
-    const res = await fetch(API + path, {
-      signal: controller.signal,
-      ...restOpts,
-      headers: { ...headers, ...restOpts.headers },
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || '请求失败');
-    return data;
-  } finally {
-    clearTimeout(timeoutId);
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    if (signal) signal.addEventListener('abort', () => controller.abort());
+
+    try {
+      const res = await fetch(API + path, {
+        signal: controller.signal,
+        ...restOpts,
+        headers: { ...headers, ...restOpts.headers },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '请求失败');
+      return data;
+    } catch (err) {
+      lastError = err;
+      /* 只对真正的网络错误重试（fetch 层面抛出的 TypeError/AbortError）。
+         HTTP 4xx/5xx 响应已经通过 !res.ok 转为 Error，不重试。
+         指数退避：200ms, 400ms... */
+      const isNetworkError = err instanceof TypeError;
+      const isAbort = err.name === 'AbortError';
+      if (attempt < retries && isNetworkError && !isAbort) {
+        await new Promise(r => setTimeout(r, 200 * Math.pow(2, attempt)));
+        continue;
+      }
+      throw lastError;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 }
 
@@ -290,6 +306,53 @@ document.getElementById('btn-delete-account').addEventListener('click', confirmD
       Auth.clear();
     }
   }
+
+  /* ====== 趣味元素 ====== */
+
+  /* 随机彩蛋文案 */
+  const eggQuotes = [
+    { text: '💡 对了，如果有人帮了你，请你也去帮帮别人。互圈就是这么转起来的。', type: 'egg-default' },
+    { text: '🤝 你知道吗？百分之九十九的人都愿意帮忙，只是不知道怎么开口。', type: 'egg-default' },
+    { text: '🌟 最成功的交易不是谁赚了便宜，而是双方都觉得爽。互圈信条第三条。', type: 'egg-warm' },
+    { text: '🎯 这里没有"老师"，只有"我能"和"我要"。平等交换，谁也不欠谁。', type: 'egg-default' },
+    { text: '🔥 勇敢亮出你的本事。你以为是小事，在别人眼里可能是雪中送炭。', type: 'egg-success' },
+    { text: '💬 发个私信只需要三秒钟。错过一个对的人可能需要更久。', type: 'egg-default' },
+    { text: '🪴 互圈不是人情交易，是资源互惠。你帮的人不一定帮你，但总有人会帮你。', type: 'egg-success' },
+    { text: '👀 你现在看到的人，可能是下一个和你一起搞事的人。别光看，动手。', type: 'egg-warm' },
+  ];
+  /* 仅首次访问（最近 3 小时）触发彩蛋 */
+  const lastEggTime = localStorage.getItem('hu_last_egg');
+  if (!lastEggTime || Date.now() - Number(lastEggTime) > 3 * 60 * 60 * 1000) {
+    setTimeout(() => {
+      const egg = eggQuotes[Math.floor(Math.random() * eggQuotes.length)];
+      const $egg = document.getElementById('easter-egg');
+      if ($egg) {
+        $egg.textContent = egg.text;
+        $egg.className = `easter-egg ${egg.type}`;
+        $egg.classList.remove('hidden');
+        localStorage.setItem('hu_last_egg', Date.now());
+        /* 5 秒后自动消失 */
+        setTimeout(() => { $egg.classList.add('hidden'); }, 6000);
+        /* 点击关闭 */
+        $egg.addEventListener('click', () => { $egg.classList.add('hidden'); }, { once: true });
+      }
+    }, 1500);
+  }
+
+  /* 网络状态监听：断线重连后自动刷新数据 */
+  window.addEventListener('online', () => {
+    if (Auth.loggedIn) {
+      toast('网络已恢复', 'success');
+      loadProfiles($searchInput.value.trim());
+    }
+  });
+  window.addEventListener('offline', () => {
+    toast('网络已断开', 'error');
+  });
+  /* 全局未捕获错误上报（静默处理，避免白屏）*/
+  window.addEventListener('error', (e) => {
+    console.warn('前端运行时错误:', e.message);
+  });
 })();
 
 /* ==================== 数据加载 ==================== */
@@ -548,7 +611,7 @@ async function toggleFavorite(btn) {
       toast('已取消收藏', 'info');
     } else {
       await api(`/profiles/${id}/favorite`, { method: 'POST' });
-      toast('收藏成功', 'success');
+      toast('⭐ 收藏成功！对方不会知道的，放心', 'success');
     }
     /* 收藏视图下取消收藏：从列表移除该卡片 */
     if (viewMode === 'favorites' && wasFavorited) {
@@ -623,12 +686,12 @@ function renderStats(data) {
   /* 热门能力 TOP10 */
   $topOffers.innerHTML = data.topOffers && data.topOffers.length > 0
     ? data.topOffers.map(o => `<span class="tag-cloud-item">${he(o.name)}<span class="count">${o.count}</span></span>`).join('')
-    : '<span class="tag-cloud-item" style="color:var(--color-text-faint);background:none;border:none)">暂无数据</span>';
+    : '<span class="tag-cloud-item" style="color:var(--color-text-faint);background:none;border:none">还没有人亮出本事 —— 你来当第一个 ✌</span>';
 
   /* 热门关键词 TOP10 */
   $topKeywords.innerHTML = data.topKeywords && data.topKeywords.length > 0
     ? data.topKeywords.map(k => `<span class="tag-cloud-item">${he(k.name)}<span class="count">${k.count}</span></span>`).join('')
-    : '<span class="tag-cloud-item" style="color:var(--color-text-faint);background:none;border:none)">暂无数据</span>';
+    : '<span class="tag-cloud-item" style="color:var(--color-text-faint);background:none;border:none">标签要靠大家填出来，加油 🔖</span>';
 
   /* 近 7 天新增趋势柱状图 */
   const maxCount = Math.max(...(data.recentTrend || []).map(d => d.count), 1);
@@ -741,7 +804,20 @@ $profileForm.addEventListener('submit', async (e) => {
     });
     closeModal();
     loadProfiles($searchInput.value.trim());
-    toast('档案已更新', 'success');
+    /* 趣味反馈：首次填写 vs 编辑 */
+    const hasEdited = localStorage.getItem('hu_has_profile');
+    if (!hasEdited) {
+      toast('🔥 档案已发布！现在别人可以搜到你啦', 'success');
+      localStorage.setItem('hu_has_profile', '1');
+    } else {
+      const funMessages = [
+        '档案已更新 🚀',
+        '已刷新，准备接受匹配 ✨',
+        '更新成功！保持档案新鲜度 +1%',
+        '搞定。新 offer 已上架 📦',
+      ];
+      toast(funMessages[Math.floor(Math.random() * funMessages.length)], 'success');
+    }
   } catch (err) { $formError.textContent = err.message; $formError.classList.remove('hidden'); }
 });
 
@@ -944,7 +1020,7 @@ async function toggleFavoriteById(id, btn) {
       toast('已取消收藏', 'info');
     } else {
       await api(`/profiles/${id}/favorite`, { method: 'POST' });
-      toast('收藏成功', 'success');
+      toast('⭐ 收藏成功！对方不会知道的，放心', 'success');
     }
   } catch {
     btn.classList.toggle('active');
@@ -982,7 +1058,7 @@ $dmOk.addEventListener('click', async () => {
     await api('/messages', { method: 'POST', body: JSON.stringify({ receiver_id: dmTargetId, body }) });
     $dmOverlay.classList.add('hidden');
     dmTargetId = null;
-    toast('私信已发送', 'success');
+    toast('📨 私信已发送，等待对方回复', 'success');
   } catch (err) {
     $dmError.textContent = err.message;
     $dmError.classList.remove('hidden');
@@ -1087,7 +1163,7 @@ async function loadChatMessages(userId) {
 
 function renderChatMessages(msgs) {
   if (msgs.length === 0) {
-    $msgChatBody.innerHTML = '<div class="msg-empty-chat">还没有消息，说点什么吧</div>';
+    $msgChatBody.innerHTML = '<div class="msg-empty-chat">还没有消息，说点什么破冰吧 💬</div>';
     return;
   }
   $msgChatBody.innerHTML = msgs.map(m => {

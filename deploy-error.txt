@@ -1,0 +1,3 @@
+automatically selected personal organization: 魏俊鸣
+Warning: Metrics token unavailable: failed to run query($slug: String!) { organization(slug: $slug) { id internalNumericId slug rawSlug name type billable } }: context canceled
+Error: We need your payment information to continue! Add a credit card or buy credit: https://fly.io/dashboard/290-5450a092-2e2b-4180-8924-78dd789c52e6/billing (Request ID: 01KVT6FT8N29HY1BCMC4SNZHDM-lax)

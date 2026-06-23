@@ -4,6 +4,7 @@ const rateLimit = require('express-rate-limit');
 const db = require('../db');
 const config = require('../config');
 const { auth } = require('../middleware/auth');
+const { sanitizeString } = require('../utils/sanitize');
 
 const router = express.Router();
 
@@ -68,7 +69,7 @@ router.post('/', ...postMiddleware, (req, res) => {
 
   const id = 'm_' + crypto.randomUUID().slice(0, 12);
   const now = Date.now();
-  stmtSend.run(id, req.userId, receiver_id, body.trim(), now);
+  stmtSend.run(id, req.userId, receiver_id, sanitizeString(body.trim(), 500), now);
 
   res.json({ success: true, id, created_at: now });
 });

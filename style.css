@@ -760,3 +760,39 @@ footer {
   .msg-chat { display: flex !important; }
   .msg-chat-placeholder { display: none; }
 }
+
+/* ========== 惊喜彩蛋横幅 ========== */
+.easter-egg {
+  position: fixed; top: var(--topbar-height); left: 0; right: 0; z-index: 101;
+  padding: 10px 24px; text-align: center; font-size: 14px; font-weight: 500;
+  animation: slideDown .4s ease;
+}
+.easter-egg.egg-default {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+}
+.easter-egg.egg-success {
+  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  color: #fff;
+}
+.easter-egg.egg-warm {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  color: #fff;
+}
+@keyframes slideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* ========== Toast 趣味变体 ========== */
+.toast-fun {
+  background: linear-gradient(135deg, #667eea, #764ba2) !important;
+  color: #fff !important;
+}
+.toast-fun .toast-close { color: rgba(255,255,255,.7); }
+.toast-fun .toast-close:hover { color: #fff; }
+
+/* 响应式：彩蛋横幅 */
+@media (max-width: 768px) {
+  .easter-egg { top: 48px; padding: 8px 16px; font-size: 13px; }
+}

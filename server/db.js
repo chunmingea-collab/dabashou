@@ -12,6 +12,9 @@ const db = new Database(dbPath);
 /* 启用 WAL 模式，提高并发性能 */
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+db.pragma('synchronous = NORMAL');   /* WAL 模式下 NORMAL 足够安全，性能更好 */
+db.pragma('cache_size = -20000');     /* 20MB 缓存 */
+db.pragma('busy_timeout = 5000');     /* 5 秒忙等待，减少 SQLITE_BUSY */
 
 /* 建表 */
 db.exec(`
@@ -35,6 +38,7 @@ db.exec(`
     keywords TEXT NOT NULL DEFAULT '[]',
     needs TEXT NOT NULL DEFAULT '[]',
     wechat TEXT NOT NULL DEFAULT '',
+    city TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -42,6 +46,7 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_profiles_created_at ON profiles(created_at);
   CREATE INDEX IF NOT EXISTS idx_profiles_updated_at ON profiles(updated_at);
+  CREATE INDEX IF NOT EXISTS idx_profiles_city ON profiles(city);
 
   /* 收藏表：用户 - 档案 多对多关系 */
   CREATE TABLE IF NOT EXISTS favorites (
@@ -74,18 +79,6 @@ db.exec(`
 
 /* 删除早期版本遗留的冗余索引（user_id 已有 UNIQUE 自动索引）*/
 db.exec(`DROP INDEX IF EXISTS idx_profiles_user_id;`);
-
-/* ============================================================
- * 数据库迁移：按需添加新字段（幂等，可多次运行）
- * ============================================================ */
-(function migrate() {
-  const cols = db.prepare("PRAGMA table_info(profiles)").all().map(c => c.name);
-
-  /* v2：city（城市，可选）*/
-  if (!cols.includes('city')) {
-    db.exec("ALTER TABLE profiles ADD COLUMN city TEXT NOT NULL DEFAULT ''");
-  }
-})();
 
 /* ============================================================
  * messages 表：站内私信

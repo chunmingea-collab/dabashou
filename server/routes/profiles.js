@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const db = require('../db');
 const { auth, optionalAuth, adminAuth } = require('../middleware/auth');
 const { sanitizeString, sanitizeStringArray } = require('../utils/sanitize');
+const { safeJson } = require('../utils/safeJson');
 
 const router = express.Router();
 
@@ -67,10 +68,16 @@ const stmtCheckReport = db.prepare('SELECT 1 FROM reports WHERE reporter_id = ? 
 const stmtInsertReport = db.prepare('INSERT INTO reports (id, reporter_id, profile_id, reason, detail) VALUES (?, ?, ?, ?, ?)');
 const stmtGetProfileOwner = db.prepare('SELECT user_id FROM profiles WHERE id = ?');
 
+/** 检测字符串是否包含 CJK 字符（中文、日文、韩文）*/
+const CJK_RE = /[一-鿿㐀-䶿぀-ゟ゠-ヿ가-힯]/;
+function hasCJK(s) {
+  return CJK_RE.test(s);
+}
+
 /* ============================================
  *  GET /api/profiles      浏览档案（公开）
  *  Query:
- *   - q: 搜索关键词（FTS5 或 LIKE 降级）
+ *   - q: 搜索关键词（CJK 文本使用 LIKE，ASCII 优先尝试 FTS5）
  *   - page: 页码（默认 1）
  *   - size: 每页条数（默认 20，最大 50）
  *   - sort: 'latest'|'popular'（默认 latest）
@@ -103,11 +110,12 @@ router.get('/', optionalAuth, (req, res) => {
 
   if (q && q.trim()) {
     const term = q.trim();
-    /* 先尝试 FTS5；FTS5 对中文连续字符分词有限，可能返回 0 结果 */
+    /* FTS5 的 unicode61 tokenizer 不支持 CJK 分词，对中文查询直接走 LIKE。
+       ASCII 查询先尝试 FTS5（更快），FTS5 返回 0 或报错时降级到 LIKE。 */
     let ftsOk = false;
-    try {
-      /* FTS5 不支持 city 精确过滤，降级到 LIKE 分支处理城市过滤 */
-      if (!cityFilter) {
+    const skipFts = hasCJK(term) || !!cityFilter;
+    if (!skipFts) {
+      try {
         const ftsTotal = db.prepare('SELECT COUNT(*) as total FROM profiles_fts WHERE profiles_fts MATCH ?').get(term).total;
         if (ftsTotal > 0) {
           total = ftsTotal;
@@ -136,9 +144,9 @@ router.get('/', optionalAuth, (req, res) => {
           }
           ftsOk = true;
         }
+      } catch (e) {
+        /* FTS5 对特殊字符（如 *、"、:、^）会抛错，降级走 LIKE */
       }
-    } catch (e) {
-      /* FTS5 对特殊字符（如 *、"、:、^）会抛错，忽略走 LIKE */
     }
     /* FTS5 未命中或不可用或有城市过滤时，降级到 LIKE（中文子串匹配更可靠）*/
     if (!ftsOk) {
@@ -269,22 +277,28 @@ router.put('/mine', auth, (req, res) => {
   if (body.keywords && !Array.isArray(body.keywords)) return res.status(400).json({ error: 'keywords 必须是数组' });
   if (body.needs && !Array.isArray(body.needs)) return res.status(400).json({ error: 'needs 必须是数组' });
 
-  const nickname = sanitizeString(body.nickname, 20);
-  const intro    = sanitizeString(body.intro, 200);
-  const wechat   = sanitizeString(body.wechat, 50);
-  const city     = sanitizeString(body.city, 20);
+  /* 先校验原始输入长度（清洗前），避免静默截断 */
+  const rawNick = typeof body.nickname === 'string' ? body.nickname.trim() : '';
+  if (!rawNick) return res.status(400).json({ error: '昵称不能为空' });
+  if (rawNick.length > 20) return res.status(400).json({ error: '昵称最多 20 个字符' });
+
+  const rawIntro = typeof body.intro === 'string' ? body.intro.trim() : '';
+  if (rawIntro.length > 200) return res.status(400).json({ error: '介绍最多 200 个字符' });
+
+  const rawWechat = typeof body.wechat === 'string' ? body.wechat.trim() : '';
+  if (rawWechat.length > 50) return res.status(400).json({ error: '微信号最多 50 个字符' });
+
+  const rawCity = typeof body.city === 'string' ? body.city.trim() : '';
+  if (rawCity.length > 20) return res.status(400).json({ error: '城市最多 20 个字符' });
+
+  /* 安全清洗（maxLen 作为兜底截断）*/
+  const nickname = sanitizeString(rawNick, 20);
+  const intro    = sanitizeString(rawIntro, 200);
+  const wechat   = sanitizeString(rawWechat, 50);
+  const city     = sanitizeString(rawCity, 20);
   const offers   = sanitizeStringArray(body.offers, 100, 20);
   const keywords = sanitizeStringArray(body.keywords, 30, 20);
   const needs    = sanitizeStringArray(body.needs, 100, 20);
-
-  if (!nickname || !nickname.trim()) {
-    return res.status(400).json({ error: '昵称不能为空' });
-  }
-
-  if (nickname.trim().length > 20) return res.status(400).json({ error: '昵称最多 20 个字符' });
-  if (intro.length > 200) return res.status(400).json({ error: '介绍最多 200 个字符' });
-  if (wechat.length > 50) return res.status(400).json({ error: '微信号最多 50 个字符' });
-  if (city.length > 20) return res.status(400).json({ error: '城市最多 20 个字符' });
 
   const MAX_ITEMS = 20, MAX_ITEM_LEN = 100;
   if (offers.length > MAX_ITEMS) return res.status(400).json({ error: `最多填写 ${MAX_ITEMS} 条能力` });
@@ -523,8 +537,9 @@ router.get('/stats', (req, res) => {
 
   const total = stmtCountProfiles.get().count;
 
-  /* 热门能力 TOP10：解析所有 offers JSON，聚合统计 */
-  const offersRows = db.prepare("SELECT offers FROM profiles WHERE offers != '[]'").all();
+  /* 热门能力 TOP10：解析所有 offers JSON，聚合统计
+     限制扫描行数上限（5000 行），超大规模下仍有性能保证 */
+  const offersRows = db.prepare("SELECT offers FROM profiles WHERE offers != '[]' ORDER BY updated_at DESC LIMIT 5000").all();
   const offerCounts = new Map();
   for (const r of offersRows) {
     const items = safeJson(r.offers, []);
@@ -539,7 +554,7 @@ router.get('/stats', (req, res) => {
     .map(([name, count]) => ({ name, count }));
 
   /* 热门关键词 TOP10 */
-  const kwRows = db.prepare("SELECT keywords FROM profiles WHERE keywords != '[]'").all();
+  const kwRows = db.prepare("SELECT keywords FROM profiles WHERE keywords != '[]' ORDER BY updated_at DESC LIMIT 5000").all();
   const kwCounts = new Map();
   for (const r of kwRows) {
     const items = safeJson(r.keywords, []);
@@ -581,13 +596,5 @@ router.get('/stats', (req, res) => {
   statsCache = { data, timestamp: now };
   res.json(data);
 });
-
-function safeJson(str, fallback) {
-  if (str == null) return fallback;
-  try {
-    const parsed = JSON.parse(str);
-    return parsed != null ? parsed : fallback;
-  } catch { return fallback; }
-}
 
 module.exports = router;
